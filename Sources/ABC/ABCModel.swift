@@ -1,7 +1,7 @@
 import Foundation
 
 /// 正規化された有理数。音価(全音符=1)や拍子の表現に使う。
-public struct ABCFraction: Hashable, Sendable, CustomStringConvertible {
+public struct ABCFraction: Hashable, Comparable, Sendable, CustomStringConvertible {
     public private(set) var num: Int
     public private(set) var den: Int
 
@@ -240,6 +240,8 @@ public struct ABCNote: Sendable {
     /// ビームグループの先頭/末尾
     public var beamStart: Bool
     public var beamEnd: Bool
+    /// 直前に空白がある(ABC では空白がビームを切断する)。自動ビームの境界に使う。
+    public var spaceBefore: Bool
     /// 装飾
     public var decorations: [ABCDecoration]
     /// コード記号("G7" など、五線上部に表示)
@@ -262,11 +264,13 @@ public struct ABCNote: Sendable {
                 beamStart: Bool = false, beamEnd: Bool = false,
                 decorations: [ABCDecoration] = [], chordSymbol: String? = nil,
                 lyric: ABCLyric? = nil, graceNotes: [ABCNote] = [],
-                tuplet: ABCTuplet? = nil, sourceStart: Int = 0, sourceEnd: Int = 0, line: Int = 0) {
+                tuplet: ABCTuplet? = nil, sourceStart: Int = 0, sourceEnd: Int = 0, line: Int = 0,
+                spaceBefore: Bool = false) {
         self.id = id; self.pitches = pitches; self.rest = rest; self.glyph = glyph
         self.dots = dots; self.duration = duration; self.tieStart = tieStart
         self.slurStarts = slurStarts; self.slurEnds = slurEnds
         self.beamStart = beamStart; self.beamEnd = beamEnd
+        self.spaceBefore = spaceBefore
         self.decorations = decorations; self.chordSymbol = chordSymbol
         self.lyric = lyric; self.graceNotes = graceNotes; self.tuplet = tuplet
         self.sourceStart = sourceStart; self.sourceEnd = sourceEnd; self.line = line

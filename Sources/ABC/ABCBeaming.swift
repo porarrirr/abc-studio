@@ -47,6 +47,8 @@ public enum ABCBeaming {
                 }
             case .note(let note):
                 let candidate = !note.isRest && note.glyph.flagCount >= 1
+                // ABC では空白がビームを切断する
+                if note.spaceBefore { closeGroup() }
                 // ビーム単位の区切りをまたぐ音符はグループに入れない
                 let crosses = candidate && !unitPos.isZero && (unitPos + note.duration) > unit
                 if !candidate || crosses { closeGroup() }

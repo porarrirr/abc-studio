@@ -29,6 +29,20 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E713D8F2E05F28EF9D0E8A28"
+               BuildableName = "ABCStudioTests.xctest"
+               BlueprintName = "ABCStudioTests"
+               ReferencedContainer = "container:ABCStudio.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "F41D5BECEA1204748AB0A43E"
                BuildableName = "ABCStudioUITests.xctest"
                BlueprintName = "ABCStudioUITests"
@@ -53,6 +67,17 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "E713D8F2E05F28EF9D0E8A28"
+               BuildableName = "ABCStudioTests.xctest"
+               BlueprintName = "ABCStudioTests"
+               ReferencedContainer = "container:ABCStudio.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
          <TestableReference
             skipped = "NO"
             parallelizable = "NO">

@@ -1,7 +1,15 @@
 import Combine
 import Foundation
+import MediaPlayer
+import UIKit
 
-/// アプリ全体の状態。ABCソースのパース・音色割当・再生をまとめる。
+/// 共有シートへ渡すファイル(.sheet(item:) 用)
+struct ShareFile: Identifiable {
+    let url: URL
+    var id: URL { url }
+}
+
+/// アプリ全体の状態。ABCソースのパース・音色割当・再生・入出力をまとめる。
 final class StudioModel: ObservableObject {
     @Published var source: String = ""
     @Published var sourceName: String = ""
@@ -14,12 +22,26 @@ final class StudioModel: ObservableObject {
     @Published var cursorID: Int?
     @Published var toastText: String?
     @Published var status = "準備完了"
-    /// 再生速度(%)75-150
+    /// 再生速度(%)50-200
     @Published var speed = 100
     @Published var showImporter = false
     @Published var importError: String?
     /// ソースエディタへのジャンプ要求(行番号)。処理後 nil に戻す。
     @Published var jumpToLine: Int?
+    /// ミュート中の声部
+    @Published var mutedVoices: Set<String> = []
+    /// ソロ再生中の声部(nil = なし)
+    @Published var soloVoiceID: String?
+    /// マスター音量 0...1
+    @Published var masterVolume: Double = 1
+    /// 曲全体のループ再生
+    @Published var loopEnabled = false {
+        didSet { engine.loopEnabled = loopEnabled }
+    }
+    /// 共有シート表示要求(書き出し済みファイル)
+    @Published var shareFile: ShareFile?
+    /// 音声レンダリング中
+    @Published var isRendering = false
 
     let engine = PlaybackEngine()
     /// 初回起動時の例題(app.js の EXAMPLE と同一)
@@ -43,6 +65,7 @@ K:C
     private var toastTask: Task<Void, Never>?
     private var sequence: PlaybackSequence?
     private var engineObserver: AnyCancellable?
+    private var remoteInstalled = false
 
     var tune: ABCTune? {
         guard let book, book.tunes.indices.contains(selectedTune) else { return nil }
@@ -69,7 +92,14 @@ K:C
             self.highlight = []
             self.cursorID = nil
             self.status = "再生完了"
+            self.updateNowPlaying()
         }
+        engine.onAutoPause = { [weak self] in
+            guard let self else { return }
+            self.status = "一時停止"
+            self.updateNowPlaying()
+        }
+        installRemoteCommands()
     }
 
     // MARK: - 読み込み
@@ -94,6 +124,31 @@ K:C
             loadABC(abc, filename: url.lastPathComponent)
         } catch {
             importError = error.localizedDescription
+        }
+    }
+
+    /// クリップボードの ABC テキストを読み込む
+    func importPaste() {
+        guard let text = UIPasteboard.general.string,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            toast("クリップボードに ABC テキストがありません"); return
+        }
+        loadABC(text, filename: "クリップボード")
+    }
+
+    /// バンドル同梱のサンプル曲(Samples/*.abc)
+    var samples: [(name: String, url: URL)] {
+        (Bundle.main.urls(forResourcesWithExtension: "abc", subdirectory: "Samples") ?? [])
+            .map { ($0.deletingPathExtension().lastPathComponent, $0) }
+            .sorted { $0.name < $1.name }
+    }
+
+    func loadSample(_ url: URL) {
+        do {
+            let abc = try String(contentsOf: url, encoding: .utf8)
+            loadABC(abc, filename: url.lastPathComponent)
+        } catch {
+            toast("サンプルを読み込めません: \(error.localizedDescription)")
         }
     }
 
@@ -131,6 +186,7 @@ K:C
             UserDefaults.standard.set(normalized, forKey: "lastABC")
             UserDefaults.standard.set(filename, forKey: "lastFilename")
         }
+        updateNowPlaying()
     }
 
     func selectTune(_ index: Int) {
@@ -143,25 +199,65 @@ K:C
         }
         assignments = next
         rebuildSequence()
+        updateNowPlaying()
     }
 
     // MARK: - 再生
+
+    private func instrumentMap() -> [String: Instrument] {
+        var map: [String: Instrument] = [:]
+        for v in tune?.voices ?? [] {
+            map[v.id] = Instruments.byID(assignments[v.id] ?? "") ?? Instruments.all[0]
+        }
+        return map
+    }
 
     private func rebuildSequence() {
         guard let tune else { return }
         engine.stop()
         sequence = ABCSequencer.sequence(tune)
-        var map: [String: Instrument] = [:]
-        for v in tune.voices {
-            map[v.id] = Instruments.byID(assignments[v.id] ?? "") ?? Instruments.all[0]
-        }
-        engine.load(sequence!, instruments: map)
+        engine.load(sequence!, instruments: instrumentMap())
+        applyGains()
+        engine.setMasterVolume(Float(masterVolume))
     }
 
     func assign(_ voiceID: String, instrument: String) {
         assignments[voiceID] = instrument
         rebuildSequence()
         toast("次の再生から音色を変更します")
+    }
+
+    /// 声部ごとの実効音量(ソロ優先、なければミュート反映)
+    private func trackGains() -> [String: Float] {
+        var gains: [String: Float] = [:]
+        for v in tune?.voices ?? [] {
+            let audible = soloVoiceID != nil ? v.id == soloVoiceID : !mutedVoices.contains(v.id)
+            gains[v.id] = audible ? 1 : 0
+        }
+        return gains
+    }
+
+    private func applyGains() {
+        engine.setTrackGains(trackGains())
+    }
+
+    func toggleMute(_ voiceID: String) {
+        if mutedVoices.contains(voiceID) {
+            mutedVoices.remove(voiceID)
+        } else {
+            mutedVoices.insert(voiceID)
+        }
+        applyGains()
+    }
+
+    func toggleSolo(_ voiceID: String) {
+        soloVoiceID = soloVoiceID == voiceID ? nil : voiceID
+        applyGains()
+    }
+
+    func setMasterVolume(_ volume: Double) {
+        masterVolume = volume
+        engine.setMasterVolume(Float(volume))
     }
 
     func togglePlay() {
@@ -173,6 +269,7 @@ K:C
             engine.play()
             status = "再生中"
         }
+        updateNowPlaying()
     }
 
     func stopPlayback() {
@@ -180,27 +277,143 @@ K:C
         highlight = []
         cursorID = nil
         status = "停止"
+        updateNowPlaying()
     }
 
     func seek(to fraction: Double) {
         engine.seek(toFraction: fraction)
+        updateNowPlaying()
+    }
+
+    /// 楽譜上の音符タップ → その位置へシーク
+    func seekToElement(_ elementID: Int) {
+        engine.seekToElement(elementID)
+        status = engine.isPlaying ? "再生中" : "シーク"
+        updateNowPlaying()
     }
 
     func setSpeed(_ percent: Int) {
         speed = percent
         engine.setSpeed(percent)
         status = "速度変更済み"
+        updateNowPlaying()
+    }
+
+    // MARK: - 書き出し
+
+    private func writeTemp(_ data: Data, name: String) -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: url)
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            toast("書き出しに失敗しました: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func exportName(_ ext: String) -> String {
+        let base: String
+        if let t = tune?.title, !t.isEmpty {
+            base = t
+        } else {
+            base = sourceName.isEmpty ? "score" : sourceName
+        }
+        let safe = base.components(separatedBy: CharacterSet(charactersIn: "/\\?%*|\"<>:"))
+            .joined(separator: "_")
+        let stem = safe.hasSuffix("." + ext) ? String(safe.dropLast(ext.count + 1)) : safe
+        return stem + "." + ext
+    }
+
+    /// 編集中の ABC テキストを .abc ファイルとして共有
+    func shareSource() {
+        guard let f = writeTemp(Data(source.utf8), name: exportName("abc")) else { return }
+        shareFile = ShareFile(url: f)
+    }
+
+    /// 楽譜を PNG 画像として共有
+    func shareScorePNG() {
+        guard let tune else { toast("楽譜を読み込んでください"); return }
+        guard let data = ScoreExporter.pngData(tune: tune) else {
+            toast("画像の作成に失敗しました"); return
+        }
+        guard let f = writeTemp(data, name: exportName("png")) else { return }
+        shareFile = ShareFile(url: f)
+    }
+
+    /// 楽譜を PDF として共有
+    func shareScorePDF() {
+        guard let tune else { toast("楽譜を読み込んでください"); return }
+        guard let data = ScoreExporter.pdfData(tune: tune) else {
+            toast("PDF の作成に失敗しました"); return
+        }
+        guard let f = writeTemp(data, name: exportName("pdf")) else { return }
+        shareFile = ShareFile(url: f)
+    }
+
+    /// 演奏データを MIDI ファイルとして共有
+    func shareMIDI() {
+        guard let seq = sequence else { toast("楽譜を読み込んでください"); return }
+        let data = MIDIWriter.data(for: seq, instruments: instrumentMap())
+        guard let f = writeTemp(data, name: exportName("mid")) else { return }
+        shareFile = ShareFile(url: f)
+    }
+
+    /// 演奏を WAV 音声としてオフラインレンダリングして共有(非同期)
+    func shareAudio() {
+        guard let seq = sequence else { toast("楽譜を読み込んでください"); return }
+        isRendering = true
+        status = "音声を書き出し中…"
+        let instruments = instrumentMap()
+        let gains = trackGains()
+        let volume = Float(masterVolume)
+        let percent = speed
+        let name = exportName("wav")
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let url = try AudioExporter.render(sequence: seq,
+                                                   instruments: instruments,
+                                                   trackGains: gains,
+                                                   masterVolume: volume,
+                                                   speedPercent: percent,
+                                                   filename: name)
+                await MainActor.run {
+                    self?.isRendering = false
+                    self?.status = "書き出し完了"
+                    self?.shareFile = ShareFile(url: url)
+                }
+            } catch {
+                await MainActor.run {
+                    self?.isRendering = false
+                    self?.status = "書き出し失敗"
+                    self?.toast(error.localizedDescription)
+                }
+            }
+        }
     }
 
     // MARK: - 診断・エディタ
 
-    /// エディタ入力時の遅延バリデーション
+    /// エディタ入力時の遅延バリデーション(重いパースはバックグラウンドで)と
+    /// ドラフト自動保存(「楽譜に反映」を押さずに終了しても編集が残る)。
     func scheduleValidation() {
         lintTask?.cancel()
+        let src = source
         lintTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled, let self else { return }
-            await MainActor.run { self.validateSource() }
+            UserDefaults.standard.set(src, forKey: "lastABC")
+            let diags = await Task.detached(priority: .userInitiated) {
+                let parsed = ABCParser.parse(src)
+                return (parsed.diagnostics + ABCDiagnostics.validate(src))
+                    .sorted {
+                        ($0.line, $0.severity == .error ? 0 : 1)
+                            < ($1.line, $1.severity == .error ? 0 : 1)
+                    }
+            }.value
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self.diagnostics = diags }
         }
     }
 
@@ -247,6 +460,57 @@ K:C
     private static func format(_ seconds: Double) -> String {
         let s = max(0, Int(seconds.rounded(.down)))
         return "\(s / 60):\(String(format: "%02d", s % 60))"
+    }
+
+    // MARK: - Now Playing / リモコン
+
+    /// ロック画面・コントロールセンターの再生操作をアプリに接続する。
+    private func installRemoteCommands() {
+        guard !remoteInstalled else { return }
+        remoteInstalled = true
+        let center = MPRemoteCommandCenter.shared()
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self, self.tune != nil else { return .commandFailed }
+            self.togglePlay()
+            return .success
+        }
+        center.playCommand.addTarget { [weak self] _ in
+            guard let self, self.tune != nil, !self.engine.isPlaying else { return .commandFailed }
+            self.togglePlay()
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            guard let self, self.engine.isPlaying else { return .commandFailed }
+            self.togglePlay()
+            return .success
+        }
+        center.stopCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            self.stopPlayback()
+            return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let self,
+                  let e = event as? MPChangePlaybackPositionCommandEvent,
+                  self.displayDuration > 0 else { return .commandFailed }
+            self.seek(to: e.positionTime / self.displayDuration)
+            return .success
+        }
+    }
+
+    /// Now Playing 情報(曲名・長さ・再生位置・レート)を更新する。
+    func updateNowPlaying() {
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: tune?.title ?? "ABC Studio",
+            MPMediaItemPropertyArtist: "ABC Studio",
+            MPMediaItemPropertyPlaybackDuration: displayDuration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: engine.progress * displayDuration,
+            MPNowPlayingInfoPropertyPlaybackRate: engine.isPlaying ? Double(speed) / 100 : 0,
+        ]
+        if let composer = tune?.composer, !composer.isEmpty {
+            info[MPMediaItemPropertyComposer] = composer
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
     private enum ImportFailure: LocalizedError {

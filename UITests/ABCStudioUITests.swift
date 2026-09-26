@@ -65,7 +65,9 @@ final class ABCStudioUITests: XCTestCase {
         saveScreenshot("6-playing-later")
 
         // 停止
-        app.buttons["■"].tap()
+        app.buttons.matching(
+            NSPredicate(format: "label == '■' OR label == '停止'")
+        ).firstMatch.tap()
         XCTAssertTrue(app.staticTexts["停止"].waitForExistence(timeout: 3))
     }
 }

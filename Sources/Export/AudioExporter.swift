@@ -1,0 +1,112 @@
+import AVFoundation
+import Foundation
+
+/// PlaybackSequence をオフラインで WAV ファイルにレンダリングする。
+/// 再生時と同じグラフ(playerNodes → auxMixer → reverb → mainMixer)を
+/// manual rendering mode の別エンジンで回す。
+public enum AudioExporter {
+    public enum RenderError: LocalizedError {
+        case empty
+        case tooLong
+        case renderFailed
+        public var errorDescription: String? {
+            switch self {
+            case .empty: return "書き出す音がありません"
+            case .tooLong: return "曲が長すぎて書き出せません"
+            case .renderFailed: return "音声のレンダリングに失敗しました"
+            }
+        }
+    }
+
+    /// 上限 20 分(speed 反映後の実時間)
+    public static let maxRenderSeconds: TimeInterval = 20 * 60
+
+    /// 現在のパート割当・ミュート/ソロ・音量・速度を反映して書き出す。
+    /// - returns: 一時ディレクトリ内の .wav ファイル URL
+    public static func render(sequence: PlaybackSequence,
+                              instruments: [String: Instrument],
+                              trackGains: [String: Float] = [:],
+                              masterVolume: Float = 1,
+                              speedPercent: Int = 100,
+                              filename: String = "ABCStudio-render.wav") throws -> URL {
+        let rate = max(0.25, Double(speedPercent) / 100)
+        let outSeconds = sequence.totalSeconds / rate
+        guard sequence.totalBeats > 0 else { throw RenderError.empty }
+        guard outSeconds <= maxRenderSeconds else { throw RenderError.tooLong }
+
+        let font = SoundFontPlayer()
+        let format = font.format
+        let engine = AVAudioEngine()
+        let auxMixer = AVAudioMixerNode()
+        let reverb = AVAudioUnitReverb()
+
+        try engine.enableManualRenderingMode(.offline, format: format,
+                                             maximumFrameCount: 8192)
+        engine.attach(auxMixer)
+        engine.attach(reverb)
+        reverb.loadFactoryPreset(.mediumHall)
+        reverb.wetDryMix = 16
+        engine.connect(auxMixer, to: reverb, format: format)
+        engine.connect(reverb, to: engine.mainMixerNode, format: format)
+        engine.mainMixerNode.outputVolume = min(1, max(0, masterVolume))
+
+        var nodes: [AVAudioPlayerNode] = []
+        for track in sequence.tracks {
+            let node = AVAudioPlayerNode()
+            engine.attach(node)
+            engine.connect(node, to: auxMixer, format: format)
+            node.volume = trackGains[track.voiceID] ?? 1
+            nodes.append(node)
+        }
+        try engine.start()
+        for node in nodes { node.play() }
+
+        // 全イベントを絶対サンプル時刻でスケジュール(先読み不要、一括でよい)
+        let leadIn = 0.05
+        for (index, track) in sequence.tracks.enumerated() {
+            let instrument = instruments[track.voiceID]
+                ?? (track.isPercussion
+                    ? (Instruments.byID("drums") ?? Instruments.all[0])
+                    : Instruments.all[0])
+            for event in track.events {
+                let offsetSec = sequence.seconds(forBeat: event.startBeat) / rate + leadIn
+                let eventSec = (sequence.seconds(forBeat: event.startBeat + event.durationBeats)
+                                - sequence.seconds(forBeat: event.startBeat)) / rate
+                guard let buffer = font.makeBuffer(dir: instrument.soundFontDir,
+                                                   midi: event.midi,
+                                                   seconds: eventSec,
+                                                   velocity: event.velocity) else {
+                    continue
+                }
+                let time = AVAudioTime(
+                    sampleTime: AVAudioFramePosition((offsetSec * format.sampleRate).rounded()),
+                    atRate: format.sampleRate)
+                nodes[index].scheduleBuffer(buffer, at: time, options: [],
+                                            completionHandler: nil)
+            }
+        }
+
+        let totalFrames = AVAudioFrameCount((outSeconds + leadIn + 1.0) * format.sampleRate)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(filename)
+        try? FileManager.default.removeItem(at: url)
+        let file = try AVAudioFile(forWriting: url, settings: format.settings,
+                                   commonFormat: .pcmFormatFloat32, interleaved: false)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 8192)
+        else { throw RenderError.renderFailed }
+        var written: AVAudioFrameCount = 0
+        while written < totalFrames {
+            let want = min(8192, totalFrames - written)
+            do {
+                try engine.renderOffline(want, to: buffer)
+            } catch {
+                throw RenderError.renderFailed
+            }
+            if buffer.frameLength == 0 { break }
+            try file.write(from: buffer)
+            written += buffer.frameLength
+        }
+        engine.stop()
+        return url
+    }
+}

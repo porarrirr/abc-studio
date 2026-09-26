@@ -6,7 +6,8 @@ settings:
     SWIFT_VERSION: 5.0
     IPHONEOS_DEPLOYMENT_TARGET: 17.0
     TARGETED_DEVICE_FAMILY: "1,2"
-    GENERATE_INFOPLIST_FILE: YES
+    MARKETING_VERSION: 1.0
+    CURRENT_PROJECT_VERSION: 1
 targets:
   ABCStudio:
     type: application
@@ -15,16 +16,27 @@ targets:
       - path: Sources
       - path: SoundFont
         type: folder
+      - path: Samples
+        type: folder
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: jp.porari.abcstudio
-        INFOPLIST_KEY_CFBundleDisplayName: ABC Studio
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_FILE: Sources/Info.plist
         SUPPORTS_MACCATALYST: NO
+  ABCStudioTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: ABCStudio
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: jp.porari.abcstudio.tests
+        TEST_TARGET_NAME: ABCStudio
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/ABCStudio.app/ABCStudio
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
   ABCStudioUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -34,12 +46,15 @@ targets:
       base:
         TEST_TARGET_NAME: ABCStudio
         PRODUCT_BUNDLE_IDENTIFIER: jp.porari.abcstudio.uitests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   ABCStudio:
     build:
       targets:
         ABCStudio: all
+        ABCStudioTests: [test]
         ABCStudioUITests: [test]
     test:
       targets:
+        - ABCStudioTests
         - ABCStudioUITests

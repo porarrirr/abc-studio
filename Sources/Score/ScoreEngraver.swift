@@ -2,11 +2,7 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-// ABCFraction implements < and == in ABCModel.swift but never declares Comparable,
-// which the app target needs (e.g. ABCBeaming compares note durations). The
-// conformance is declared here — the canonical same-module extension — because
-// ABCModel.swift must not be modified.
-extension ABCFraction: Comparable {}
+
 
 // MARK: - Public API
 

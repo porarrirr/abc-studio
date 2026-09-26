@@ -497,6 +497,8 @@ private final class TuneContext {
     var prefixStart: Int? = nil
     var pendingTuplet: (n: Int, factor: ABCFraction, remaining: Int, total: Int)? = nil
     var pendingBroken: ABCFraction? = nil
+    /// 直前に空白を読んだ(次の音符の spaceBefore になる)
+    var spacePending = false
     var slurOpen = 0
     var slurWarned = false
     var ampWarned = false
@@ -843,6 +845,7 @@ private final class TuneContext {
             let c = L.chars[p]
             switch c {
             case " ", "\t":
+                spacePending = true
                 p += 1
             case "|":
                 p = bar(L, p)
@@ -1336,13 +1339,15 @@ private final class TuneContext {
                            graceNotes: pendingGrace,
                            tuplet: tuplet,
                            sourceStart: prefixStart ?? start,
-                           sourceEnd: end, line: line)
+                           sourceEnd: end, line: line,
+                           spaceBefore: spacePending)
         nextNoteId += 1
         pendingChord = nil
         pendingDeco = []
         pendingSlur = 0
         pendingGrace = []
         prefixStart = nil
+        spacePending = false
         let idx = voices[vi].elements.count
         voices[vi].elements.append(.note(note))
         voices[vi].writtenLen[idx] = written

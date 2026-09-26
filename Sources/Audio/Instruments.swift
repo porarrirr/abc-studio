@@ -35,8 +35,9 @@ public enum Instruments {
         if n.contains("violin") || n.contains("fiddle") || n.contains("バイオリン") { return all[2] }
         if n.contains("flute") || n.contains("フルート") { return all[3] }
         if n.contains("trumpet") || n.contains("トランペット") { return all[4] }
-        if n.contains("bass") || n.contains("ベース") { return all[5] }
+        // "Bass Drum" 等をベースと誤認しないよう打楽器を先に判定する
         if n.contains("drum") || n.contains("percussion") || n.contains("ドラム") { return all[6] }
+        if n.contains("bass") || n.contains("ベース") { return all[5] }
         if n.contains("choir") || n.contains("voice") || n.contains("vocal") || n.contains("合唱") { return all[7] }
         return all[0]
     }

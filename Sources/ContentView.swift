@@ -16,10 +16,13 @@ private extension Color {
 }
 
 struct ContentView: View {
-    @StateObject private var model = StudioModel()
+    @EnvironmentObject private var model: StudioModel
     @State private var tab = 0
     @State private var seekDrag: Double?
-    private let abcType = UTType(filenameExtension: "abc") ?? .plainText
+    @State private var speedDrag: Double?
+    @State private var showAbout = false
+    /// Info.plist でエクスポート宣言した独自 UTI(なければプレーンテキスト扱い)
+    private let abcType = UTType("jp.porari.abc") ?? .plainText
     private let tabs = ["楽譜", "楽器", "ABCを編集"]
 
     var body: some View {
@@ -42,6 +45,7 @@ struct ContentView: View {
         .background(Color.canvas.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) { playerBar }
         .overlay(alignment: .bottom) { toastOverlay }
+        .overlay { if model.isRendering { renderingOverlay } }
         .fileImporter(isPresented: $model.showImporter,
                       allowedContentTypes: [abcType, .plainText],
                       allowsMultipleSelection: false) { result in
@@ -52,6 +56,10 @@ struct ContentView: View {
                 model.importError = error.localizedDescription
             }
         }
+        .sheet(item: $model.shareFile) { file in
+            ShareSheet(items: [file.url])
+        }
+        .sheet(isPresented: $showAbout) { AboutView() }
         .alert("読み込みエラー", isPresented: Binding(
             get: { model.importError != nil },
             set: { if !$0 { model.importError = nil } }
@@ -65,6 +73,14 @@ struct ContentView: View {
             Text(model.importError ?? "")
         }
         .onAppear { model.restore() }
+        .focusable()
+        .onKeyPress(.space) { model.togglePlay(); return .handled }
+        .onKeyPress(.leftArrow) {
+            model.seek(to: max(0, model.engine.progress - 0.02)); return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            model.seek(to: min(1, model.engine.progress + 0.02)); return .handled
+        }
     }
 
     // MARK: - ヘッダー
@@ -96,6 +112,43 @@ struct ContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.796, green: 0.863, blue: 0.839)))
             }
+            Menu {
+                Button { model.importPaste() } label: {
+                    Label("クリップボードから読み込む", systemImage: "doc.on.clipboard")
+                }
+                if !model.samples.isEmpty {
+                    Menu("サンプルを開く") {
+                        ForEach(model.samples, id: \.url) { sample in
+                            Button(sample.name) { model.loadSample(sample.url) }
+                        }
+                    }
+                }
+                Divider()
+                Button { model.shareSource() } label: {
+                    Label("ABC を保存・共有", systemImage: "doc.text")
+                }
+                Menu("楽譜を書き出す") {
+                    Button { model.shareScorePNG() } label: { Label("PNG 画像", systemImage: "photo") }
+                    Button { model.shareScorePDF() } label: { Label("PDF", systemImage: "doc") }
+                }
+                Button { model.shareMIDI() } label: {
+                    Label("MIDI を書き出す", systemImage: "pianokeys")
+                }
+                Button { model.shareAudio() } label: {
+                    Label("音声 (WAV) を書き出す", systemImage: "waveform")
+                }
+                .disabled(model.isRendering)
+                Divider()
+                Button { showAbout = true } label: {
+                    Label("このアプリについて", systemImage: "info.circle")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color.tealDark)
+                    .frame(width: 40, height: 40)
+            }
+            .accessibilityLabel("メニュー")
         }
         .padding(.horizontal, 22)
         .frame(height: 66)
@@ -191,7 +244,7 @@ struct ContentView: View {
                     .font(.system(size: 12))
                     .tint(Color.tealDark)
                 }
-                Text("再生中の音符を追いかけます")
+                Text("音符タップでシーク · 再生中の音符を追いかけます")
                     .font(.system(size: 10))
                     .foregroundStyle(Color.faint)
             }
@@ -200,7 +253,8 @@ struct ContentView: View {
             .padding(.bottom, 6)
 
             if let tune = model.tune {
-                ScoreView(tune: tune, highlight: model.highlight, cursorID: model.cursorID)
+                ScoreView(tune: tune, highlight: model.highlight, cursorID: model.cursorID,
+                          onTapNote: { model.seekToElement($0) })
                     .frame(height: scoreHeight)
                     .padding(.bottom, 8)
             } else {
@@ -241,7 +295,32 @@ struct ContentView: View {
                     }
                 }
 
-                Text("合唱は Choir Aahs 音色で再生します。歌詞を歌う音声合成ではありません。ドラムは General MIDI の打楽器配置に従います。")
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Image(systemName: "speaker.wave.3.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.tealDark)
+                        Text("マスター音量")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.ink)
+                        Spacer()
+                        Text("\(Int((model.masterVolume * 100).rounded()))%")
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color.sub)
+                    }
+                    Slider(value: Binding(
+                        get: { model.masterVolume },
+                        set: { model.setMasterVolume($0) }), in: 0...1)
+                        .tint(Color.teal)
+                        .accessibilityLabel("マスター音量")
+                }
+                .padding(13)
+                .background(Color(red: 0.988, green: 0.992, blue: 0.980))
+                .clipShape(RoundedRectangle(cornerRadius: 13))
+                .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(red: 0.886, green: 0.918, blue: 0.882)))
+                .padding(.horizontal, 16).padding(.top, 10)
+
+                Text("合唱は Choir Aahs 音色で再生します。歌詞を歌う音声合成ではありません。ドラムは General MIDI の打楽器配置に従います。S はソロ(そのパートだけ鳴らす)、スピーカーはミュートです。")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.sub)
                     .lineSpacing(4)
@@ -256,6 +335,8 @@ struct ContentView: View {
 
     private func partRow(voice: ABCVoice, index: Int) -> some View {
         let instrument = Instruments.byID(model.assignments[voice.id] ?? "") ?? Instruments.all[0]
+        let muted = model.mutedVoices.contains(voice.id)
+        let soloed = model.soloVoiceID == voice.id
         return HStack {
             HStack(spacing: 12) {
                 Text(instrument.icon)
@@ -273,7 +354,27 @@ struct ContentView: View {
                         .foregroundStyle(Color.faint)
                 }
             }
+            .opacity(muted ? 0.45 : 1)
             Spacer()
+            Button { model.toggleSolo(voice.id) } label: {
+                Text("S")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(soloed ? .white : Color.sub)
+                    .frame(width: 26, height: 26)
+                    .background(soloed ? Color.amber : Color(red: 0.937, green: 0.953, blue: 0.941))
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel(voice.name + "をソロ再生")
+            Button { model.toggleMute(voice.id) } label: {
+                Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(muted ? .white : Color.sub)
+                    .frame(width: 26, height: 26)
+                    .background(muted ? Color(red: 0.643, green: 0.220, blue: 0.165)
+                                      : Color(red: 0.937, green: 0.953, blue: 0.941))
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel(voice.name + "をミュート")
             Picker(voice.name + "の楽器", selection: Binding(
                 get: { model.assignments[voice.id] ?? "piano" },
                 set: { model.assign(voice.id, instrument: $0) })) {
@@ -420,6 +521,7 @@ struct ContentView: View {
                     .clipShape(Circle())
                     .shadow(color: Color.teal.opacity(0.2), radius: 5, y: 2)
             }
+            .accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生")
             Button { model.stopPlayback() } label: {
                 Text("■")
                     .font(.system(size: 14))
@@ -428,6 +530,18 @@ struct ContentView: View {
                     .background(Color(red: 0.929, green: 0.953, blue: 0.937))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+            .accessibilityLabel("停止")
+            Button { model.loopEnabled.toggle() } label: {
+                Image(systemName: "repeat")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(model.loopEnabled ? .white
+                                        : Color(red: 0.271, green: 0.455, blue: 0.416))
+                    .frame(width: 33, height: 33)
+                    .background(model.loopEnabled ? Color.teal
+                                        : Color(red: 0.929, green: 0.953, blue: 0.937))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .accessibilityLabel("ループ再生")
             VStack(spacing: 6) {
                 HStack {
                     Text(model.currentTimeText)
@@ -448,16 +562,25 @@ struct ContentView: View {
                     })
                     .tint(Color(red: 0.118, green: 0.545, blue: 0.498))
                     .frame(height: 8)
+                    .accessibilityLabel("再生位置")
             }
-            Picker("再生速度", selection: Binding(
-                get: { model.speed },
-                set: { model.setSpeed($0) })) {
-                Text("75%").tag(75); Text("100%").tag(100)
-                Text("125%").tag(125); Text("150%").tag(150)
+            HStack(spacing: 3) {
+                Slider(value: Binding(
+                    get: { speedDrag ?? Double(model.speed) },
+                    set: { speedDrag = $0 }),
+                    in: 50...200, step: 25,
+                    onEditingChanged: { editing in
+                        if !editing, let v = speedDrag { model.setSpeed(Int(v)) }
+                        if !editing { speedDrag = nil }
+                    })
+                    .tint(Color(red: 0.118, green: 0.545, blue: 0.498))
+                    .frame(width: 78)
+                    .accessibilityLabel("再生速度")
+                Text("\(Int((speedDrag ?? Double(model.speed)).rounded()))%")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color(red: 0.133, green: 0.310, blue: 0.294))
+                    .frame(width: 34)
             }
-            .pickerStyle(.menu)
-            .font(.system(size: 10, weight: .bold))
-            .tint(Color(red: 0.133, green: 0.310, blue: 0.294))
             .fixedSize()
         }
         .padding(.horizontal, 13)
@@ -484,6 +607,81 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: model.toastText != nil)
+    }
+
+    /// 音声書き出し中の進行表示
+    private var renderingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.25).ignoresSafeArea()
+            VStack(spacing: 10) {
+                ProgressView()
+                    .tint(Color.tealDark)
+                Text("音声を書き出し中…")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.ink)
+            }
+            .padding(24)
+            .background(Color.card)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+    }
+}
+
+/// 「このアプリについて」シート。バージョンと音色の帰属表示。
+private struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private var version: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(v) (\(b))"
+    }
+
+    private var attribution: String {
+        guard let url = Bundle.main.url(forResource: "SOUNDFONT-ATTRIBUTION",
+                                        withExtension: "md",
+                                        subdirectory: "SoundFont"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "音色: FluidR3_GM(SoundFont/SOUNDFONT-ATTRIBUTION.md を同梱)"
+        }
+        return text
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 10) {
+                        Text("♮")
+                            .font(.custom("Georgia", size: 24))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(Color(red: 0.106, green: 0.439, blue: 0.420))
+                            .clipShape(RoundedRectangle(cornerRadius: 11))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("ABC Studio").font(.system(size: 17, weight: .bold))
+                            Text("バージョン \(version)")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("ABC 記譜法の楽譜表示・再生アプリ。解析・譜面描画・再生はすべてネイティブ実装です。")
+                        .font(.system(size: 13))
+                    Text(attribution)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("このアプリについて")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
     }
 }
 
