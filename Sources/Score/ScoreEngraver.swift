@@ -690,16 +690,13 @@ private final class Engine {
     }
 
     private func emitKeySig(_ key: ABCKeySignature, clef: ABCClef, x: CGFloat, staffTop: CGFloat) {
-        let bottom = bottomStep(clef)
         for (i, a) in key.accidentals.enumerated() {
+            // keyPos は下線からの半スペース数。音符と同じ式: y = bottom - p·s/2
             let p = keyPos(a.letter, a.accidental, clef)
-            let cy = staffTop + staffH - CGFloat(p - bottomStepSafe(clef, bottom)) * (s / 2)
+            let cy = staffTop + staffH - CGFloat(p) * (s / 2)
             emitAccidentalGlyph(a.accidental, cx: x + CGFloat(i) * s * 0.92 + s * 0.45, cy: cy, size: 19)
         }
     }
-
-    // positions in keyPos tables are already relative to bottom line (offset p)
-    private func bottomStepSafe(_ clef: ABCClef, _ bottom: Int) -> Int { bottom }
 
     private func emitMeter(_ meter: ABCMeter, x: CGFloat, staffTop: CGFloat) {
         let st = staffTop
