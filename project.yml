@@ -13,7 +13,7 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-      - path: Web
+      - path: SoundFont
         type: folder
     settings:
       base:
@@ -25,3 +25,21 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         SUPPORTS_MACCATALYST: NO
+  ABCStudioUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    settings:
+      base:
+        TEST_TARGET_NAME: ABCStudio
+        PRODUCT_BUNDLE_IDENTIFIER: jp.porari.abcstudio.uitests
+schemes:
+  ABCStudio:
+    build:
+      targets:
+        ABCStudio: all
+        ABCStudioUITests: [test]
+    test:
+      targets:
+        - ABCStudioUITests

@@ -7,32 +7,100 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37637923AE91FC1C667E53C /* PlaybackEngine.swift */; };
+		1B9F3811223E89184D23537D /* ABCStudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */; };
+		5BF44BBAB892067F6311F7C6 /* ABCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C9B9B4B38999E35AB7482D /* ABCParser.swift */; };
 		749FA10A30447F72D20DE778 /* ABCStudioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */; };
-		75A03B818274602288A04265 /* Web in Resources */ = {isa = PBXBuildFile; fileRef = 795270941423C4DABD60CCCA /* Web */; };
+		8C631A1AF10E8120AD3BDC84 /* SoundFontPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */; };
+		9D280FA070943162EACDBCEF /* ABCDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */; };
+		A5675AEA3CC39AE4CE607854 /* ABCBeaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 096526D529D1B1DA38555B2E /* ABCBeaming.swift */; };
+		B47DE1CB59343AB4D14A6B54 /* ABCModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADFDC6EE95BDAC698FD18FED /* ABCModel.swift */; };
+		BDB23E7121E6087638E6E328 /* ScoreEngraver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A44E9574F3B8D984C7B54F /* ScoreEngraver.swift */; };
+		BF204BBE984A81E3377115D5 /* Instruments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */; };
+		C0409DFC0AE51DB54ABD39B2 /* SoundFont in Resources */ = {isa = PBXBuildFile; fileRef = DE74E3D7C5E22795799A65F9 /* SoundFont */; };
+		C819F9939E857FAD4B919FB3 /* SourceEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCAF4D872EFAD86A8B52390C /* SourceEditor.swift */; };
+		C8CD735EAFBF877F3E3BA72D /* StudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA80B895588686D897CD6C03 /* StudioModel.swift */; };
+		E1AFD99E3E7A9852D965E460 /* ABCSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48530F415DAD56B00713974 /* ABCSequencer.swift */; };
 		E5E3E19355972FA9BD86039D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E4407BE361A1C64DF8B504 /* ContentView.swift */; };
+		F20FDC52EDC2F0B1625DF00E /* ScoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0465B01CCC938AAB90BEF40B /* ScoreView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		0465B01CCC938AAB90BEF40B /* ScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreView.swift; sourceTree = "<group>"; };
+		096526D529D1B1DA38555B2E /* ABCBeaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCBeaming.swift; sourceTree = "<group>"; };
+		1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCDiagnostics.swift; sourceTree = "<group>"; };
 		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		795270941423C4DABD60CCCA /* Web */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Web; sourceTree = SOURCE_ROOT; };
+		73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Instruments.swift; sourceTree = "<group>"; };
+		76C9B9B4B38999E35AB7482D /* ABCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCParser.swift; sourceTree = "<group>"; };
+		8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFontPlayer.swift; sourceTree = "<group>"; };
+		99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCStudioUITests.swift; sourceTree = "<group>"; };
+		A37637923AE91FC1C667E53C /* PlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackEngine.swift; sourceTree = "<group>"; };
+		A48530F415DAD56B00713974 /* ABCSequencer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCSequencer.swift; sourceTree = "<group>"; };
+		ADFDC6EE95BDAC698FD18FED /* ABCModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCModel.swift; sourceTree = "<group>"; };
 		B4E4407BE361A1C64DF8B504 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BCAF4D872EFAD86A8B52390C /* SourceEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceEditor.swift; sourceTree = "<group>"; };
 		C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCStudioApp.swift; sourceTree = "<group>"; };
+		CA80B895588686D897CD6C03 /* StudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioModel.swift; sourceTree = "<group>"; };
+		D5A44E9574F3B8D984C7B54F /* ScoreEngraver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreEngraver.swift; sourceTree = "<group>"; };
+		DE74E3D7C5E22795799A65F9 /* SoundFont */ = {isa = PBXFileReference; lastKnownFileType = folder; path = SoundFont; sourceTree = SOURCE_ROOT; };
+		F350AE718258BC7078C2163B /* ABCStudioUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ABCStudioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		08E6CAD7CB44673FF6FE11BD = {
 			isa = PBXGroup;
 			children = (
-				795270941423C4DABD60CCCA /* Web */,
+				DE74E3D7C5E22795799A65F9 /* SoundFont */,
 				B35714C1162D52E4136E890C /* Sources */,
+				159E276A3ECFC7B214AD5291 /* UITests */,
 				A1C29BD63EEACDBFE600796B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		13DDC0BF98D0C33E0526A05C /* Audio */ = {
+			isa = PBXGroup;
+			children = (
+				A48530F415DAD56B00713974 /* ABCSequencer.swift */,
+				73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */,
+				A37637923AE91FC1C667E53C /* PlaybackEngine.swift */,
+				8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */,
+			);
+			path = Audio;
+			sourceTree = "<group>";
+		};
+		159E276A3ECFC7B214AD5291 /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
+		481D9B6D0526428453216BB0 /* ABC */ = {
+			isa = PBXGroup;
+			children = (
+				096526D529D1B1DA38555B2E /* ABCBeaming.swift */,
+				1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */,
+				ADFDC6EE95BDAC698FD18FED /* ABCModel.swift */,
+				76C9B9B4B38999E35AB7482D /* ABCParser.swift */,
+			);
+			path = ABC;
+			sourceTree = "<group>";
+		};
+		680B2E3F071D1832EB59273B /* Score */ = {
+			isa = PBXGroup;
+			children = (
+				D5A44E9574F3B8D984C7B54F /* ScoreEngraver.swift */,
+				0465B01CCC938AAB90BEF40B /* ScoreView.swift */,
+			);
+			path = Score;
 			sourceTree = "<group>";
 		};
 		A1C29BD63EEACDBFE600796B /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				546CC8E309E98E532D270FB6 /* ABCStudio.app */,
+				F350AE718258BC7078C2163B /* ABCStudioUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -42,6 +110,11 @@
 			children = (
 				C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */,
 				B4E4407BE361A1C64DF8B504 /* ContentView.swift */,
+				BCAF4D872EFAD86A8B52390C /* SourceEditor.swift */,
+				CA80B895588686D897CD6C03 /* StudioModel.swift */,
+				481D9B6D0526428453216BB0 /* ABC */,
+				13DDC0BF98D0C33E0526A05C /* Audio */,
+				680B2E3F071D1832EB59273B /* Score */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -67,6 +140,23 @@
 			productReference = 546CC8E309E98E532D270FB6 /* ABCStudio.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F41D5BECEA1204748AB0A43E /* ABCStudioUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3F53ACBD529152938D06C900 /* Build configuration list for PBXNativeTarget "ABCStudioUITests" */;
+			buildPhases = (
+				06B96DEE50CE03B9C850F6FF /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ABCStudioUITests;
+			packageProductDependencies = (
+			);
+			productName = ABCStudioUITests;
+			productReference = F350AE718258BC7078C2163B /* ABCStudioUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -76,6 +166,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					F41D5BECEA1204748AB0A43E = {
+						TestTargetID = 5DF3D9F795692305AFFD402A;
+					};
 				};
 			};
 			buildConfigurationList = 72ADCBBEBD000F4F2AFBC56A /* Build configuration list for PBXProject "ABCStudio" */;
@@ -93,6 +186,7 @@
 			projectRoot = "";
 			targets = (
 				5DF3D9F795692305AFFD402A /* ABCStudio */,
+				F41D5BECEA1204748AB0A43E /* ABCStudioUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -102,19 +196,39 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				75A03B818274602288A04265 /* Web in Resources */,
+				C0409DFC0AE51DB54ABD39B2 /* SoundFont in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		06B96DEE50CE03B9C850F6FF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1B9F3811223E89184D23537D /* ABCStudioUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		0C3A42FD6FD8F612B3E86D02 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A5675AEA3CC39AE4CE607854 /* ABCBeaming.swift in Sources */,
+				9D280FA070943162EACDBCEF /* ABCDiagnostics.swift in Sources */,
+				B47DE1CB59343AB4D14A6B54 /* ABCModel.swift in Sources */,
+				5BF44BBAB892067F6311F7C6 /* ABCParser.swift in Sources */,
+				E1AFD99E3E7A9852D965E460 /* ABCSequencer.swift in Sources */,
 				749FA10A30447F72D20DE778 /* ABCStudioApp.swift in Sources */,
 				E5E3E19355972FA9BD86039D /* ContentView.swift in Sources */,
+				BF204BBE984A81E3377115D5 /* Instruments.swift in Sources */,
+				1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */,
+				BDB23E7121E6087638E6E328 /* ScoreEngraver.swift in Sources */,
+				F20FDC52EDC2F0B1625DF00E /* ScoreView.swift in Sources */,
+				8C631A1AF10E8120AD3BDC84 /* SoundFontPlayer.swift in Sources */,
+				C819F9939E857FAD4B919FB3 /* SourceEditor.swift in Sources */,
+				C8CD735EAFBF877F3E3BA72D /* StudioModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -266,6 +380,38 @@
 			};
 			name = Release;
 		};
+		C53489CA8131454CC448D933 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = jp.porari.abcstudio.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ABCStudio;
+			};
+			name = Debug;
+		};
+		D045A148BADDBF0A063A8E55 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = jp.porari.abcstudio.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ABCStudio;
+			};
+			name = Release;
+		};
 		DB26461EC510E64A84D01958 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -291,6 +437,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		3F53ACBD529152938D06C900 /* Build configuration list for PBXNativeTarget "ABCStudioUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C53489CA8131454CC448D933 /* Debug */,
+				D045A148BADDBF0A063A8E55 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		5E484EDBF9F3DFE75555460D /* Build configuration list for PBXNativeTarget "ABCStudio" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

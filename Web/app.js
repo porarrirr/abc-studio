@@ -53,6 +53,120 @@ K:C
     }
     return found.length ? found : [{id:'main',name:'メロディー'}];
   }
+  function droppedLine(abc) {
+    const lines = abc.split('\n');
+    let inTune = false;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^X:/.test(lines[i])) { inTune = true; continue; }
+      if (!inTune || lines[i].trim()) continue;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (!lines[j].trim()) continue;
+        if (/^X:/.test(lines[j])) break;
+        if (!/^%/.test(lines[j])) return j + 1;
+      }
+    }
+    return 0;
+  }
+  function stripHtml(html) {
+    const div = document.createElement('div'); div.innerHTML = html; return div.textContent;
+  }
+  function explainWarning(msg) {
+    if (/Unknown character ignored/.test(msg)) return 'ABC として解釈できない文字があります（無視されます）';
+    if (/Expected '\]'/.test(msg)) return "和音の [ ] が閉じられていません。']' を追加してください";
+    if (/Unknown directive/.test(msg)) return 'abcjs が対応していない %% ディレクティブです（無視されます）';
+    if (/Expected.*end of (slur|tie|grace|tuplet)/.test(msg)) return '括弧・装飾の対応が取れていません';
+    return '';
+  }
+  function validateABC(abc) {
+    const diags = [];
+    const lines = abc.split('\n');
+    const push = (line, col, severity, message) =>
+      diags.push({line, col: col || 0, severity, message, context: line ? (lines[line - 1] || '').trim() : ''});
+    if (!abc.trim()) { push(0,0,'error','ABC の内容が空です。X:、T:、M:、L:、K: を含むテキストを入力してください'); return diags; }
+    const has = pattern => lines.some(l => pattern.test(l));
+    if (!has(/^X:/)) push(0,0,'error','X:（曲番号）の行がありません。曲の先頭に「X:1」を書いてください');
+    if (!has(/^K:\s*\S/)) push(0,0,'error','K:（調号）の行がありません。ヘッダの最後に「K:C」などを書いてください');
+    if (!has(/^M:/)) push(0,0,'warn','M:（拍子）の行がありません。「M:4/4」などを追加してください');
+    if (!has(/^L:/)) push(0,0,'warn','L:（基本の音長）の行がありません。「L:1/8」などを追加してください');
+    if (!has(/^T:/)) push(0,0,'warn','T:（タイトル）の行がありません。タイトルなしで表示されます');
+    const dropped = droppedLine(abc);
+    if (dropped) push(dropped,0,'error','直前の空行で曲が終了したため、この行以降は読み込まれません。ABC では空行が曲の終わりを意味します。曲の途中の空行を削除してください');
+    const defined = new Set(); const used = new Map(); let seenKey = false;
+    lines.forEach((l, i) => {
+      if (/^K:\s*\S/.test(l)) seenKey = true;
+      let m = /^V:\s*([^\s]+)/.exec(l);
+      if (m) { if (seenKey) { if (!used.has(m[1])) used.set(m[1], i + 1); } else defined.add(m[1]); }
+      m = /^\[V:\s*([^\s\]]+)\]/.exec(l);
+      if (m && !used.has(m[1])) used.set(m[1], i + 1);
+    });
+    used.forEach((ln, v) => { if (defined.size && !defined.has(v)) push(ln,0,'warn',`声部 "${v}" が V: で定義されていません。ヘッダに「V:${v}」を追加するか、表記を確認してください`); });
+    const scoreIndex = lines.findIndex(l => /^%%score/.test(l));
+    if (scoreIndex >= 0)
+      lines[scoreIndex].replace(/^%%score\s*/,'').replace(/[(){}[\]|*]/g,' ').split(/\s+/).filter(v => v && !/=/.test(v))
+        .forEach(v => { if (defined.size && !defined.has(v)) push(scoreIndex + 1,0,'warn',`%%score の声部 "${v}" が V: で定義されていません`); });
+    try {
+      const book = new ABCJS.TuneBook(abc);
+      if (!book.tunes.length) push(0,0,'error','曲が見つかりませんでした。X: で始まり K: を含む曲が必要です');
+      const xLines = []; lines.forEach((l, i) => { if (/^X:/.test(l)) xLines.push(i); });
+      book.tunes.forEach((tune, ti) => {
+        const tuneStart = (xLines[ti] ?? 0) + 1;
+        const where = book.tunes.length > 1 ? `${ti + 1} 曲目 ` : '';
+        let parsed;
+        try { parsed = ABCJS.parseOnly(tune.abc)[0]; }
+        catch (e) { push(tuneStart,0,'error',`${where}解析エラー: ${e.message}`); return; }
+        (parsed.warnings || []).forEach(w => {
+          const m = /^[^:]+:(\d+):(\d+):\s*(.*)$/s.exec(stripHtml(w));
+          if (m) {
+            const jp = explainWarning(m[3]);
+            push(tuneStart + Number(m[1]) - 1, Number(m[2]),'warn',`${where}${jp ? jp + '。' : ''}abcjs: ${m[3]}`);
+          } else push(tuneStart,0,'warn',where + stripHtml(w));
+        });
+        if (parsed && !(parsed.lines || []).some(l => l.staff)) push(tuneStart,0,'error',`${where}音符が見つかりません。K: の後に音符を書いてください`);
+      });
+    } catch (e) { push(0,0,'error',`解析エラー: ${e.message}`); }
+    return diags.sort((a, b) => a.line - b.line || (a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : 1));
+  }
+  function diagText(diags) {
+    return diags.map(d => {
+      const head = `${d.severity === 'error' ? 'エラー' : '警告'}${d.line ? ` ${d.line} 行目` : ''}${d.col ? ` ${d.col} 文字目` : ''}: ${d.message}`;
+      return d.context ? `${head}\n    > ${d.context}` : head;
+    }).join('\n');
+  }
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand('copy'); ta.remove();
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+  function renderDiagnostics(diags) {
+    const list = $('diagnostics'); list.replaceChildren();
+    $('diagPanel').hidden = !diags.length;
+    $('diagSummary').textContent = diags.length
+      ? `エラー ${diags.filter(d => d.severity === 'error').length} 件 · 警告 ${diags.filter(d => d.severity !== 'error').length} 件（タップで該当行へ）` : '';
+    diags.forEach(d => {
+      const li = document.createElement('li');
+      li.className = d.severity === 'error' ? 'diag-error' : 'diag-warn';
+      const head = document.createElement('div');
+      const pos = document.createElement('span'); pos.className = 'diag-pos';
+      pos.textContent = `${d.severity === 'error' ? 'エラー' : '警告'}${d.line ? ` ${d.line} 行目` : ''}${d.col ? ` ${d.col} 文字目` : ''}`;
+      head.append(pos, document.createTextNode(d.message));
+      li.appendChild(head);
+      if (d.context) { const ctx = document.createElement('div'); ctx.className = 'diag-context'; ctx.textContent = d.context; li.appendChild(ctx); }
+      if (d.line) li.addEventListener('click', () => jumpToLine(d.line));
+      list.appendChild(li);
+    });
+  }
+  function jumpToLine(line) {
+    const ta = $('abcSource'); const lines = ta.value.split('\n');
+    let offset = 0;
+    for (let i = 0; i < line - 1 && i < lines.length; i++) offset += lines[i].length + 1;
+    ta.focus(); ta.setSelectionRange(offset, offset + (lines[line - 1] || '').length);
+    const lh = parseFloat(getComputedStyle(ta).lineHeight) || 22;
+    ta.scrollTop = Math.max(0, (line - 4) * lh);
+  }
+  function validateSourceUI() { state.diags = validateABC($('abcSource').value.replace(/\r\n?/g,'\n')); renderDiagnostics(state.diags); }
   function guessInstrument(name) {
     const n = name.toLowerCase();
     if (/guitar|ギター/.test(n)) return 'guitar';
@@ -136,15 +250,19 @@ K:C
   }
   function loadABC(abc, filename, persist = true) {
     if (typeof abc !== 'string' || !abc.trim()) {toast('ABC の内容が空です');return;}
-    if (!/(^|\n)K:\s*\S/m.test(abc)) {toast('K: で始まる調号の行が必要です');selectTab('source');$('abcSource').value=abc;return;}
     state.abc=abc.replace(/\r\n?/g,'\n');state.sourceName=filename || '';
     $('abcSource').value=state.abc;
+    const diags = state.diags = validateABC(state.abc);
+    renderDiagnostics(diags);
+    const firstError = diags.find(d => d.severity === 'error');
     try {
+      if (firstError) { selectTab('source'); throw new Error(`${firstError.line ? firstError.line + ' 行目: ' : ''}${firstError.message}`); }
       state.tunes = new ABCJS.TuneBook(state.abc).tunes;
       if (!state.tunes.length) throw new Error('曲が見つかりませんでした');
       const select=$('tuneSelect');select.replaceChildren();select.hidden=state.tunes.length<=1;
       state.tunes.forEach((tune,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=tune.title||`曲 ${index+1}`;select.appendChild(option)});
       renderTune(0);
+      if (diags.some(d => d.severity === 'warn')) { status('読み込み完了（警告あり）'); toast('警告があります。「ABCを編集」タブで確認できます'); }
       if (persist && window.webkit?.messageHandlers?.app)
         window.webkit.messageHandlers.app.postMessage({type:'save',abc:state.abc,filename:state.sourceName});
     } catch(error) {state.visual=null;status('読み込みエラー');toast(error.message || 'ABC を確認してください')}
@@ -162,6 +280,7 @@ K:C
       $('paper').replaceChildren();
       const rendered = ABCJS.renderAbc('paper',tune.abc,{responsive:'resize',add_classes:true,staffwidth:1040,paddingtop:12,paddingbottom:12});
       if (!rendered.length || !$('paper').querySelector('svg')) throw new Error('楽譜を描画できませんでした');
+      if (!rendered[0].lines || !rendered[0].lines.some(line => line.staff)) throw new Error('音符が見つかりませんでした。ABC に音符が含まれているか確認してください');
       state.visual=rendered[0];renderParts();selectTab('score');status('準備完了');
     } catch(error) {state.visual=null;status('読み込みエラー');toast(error.message || 'ABC を確認してください')}
   }
@@ -235,6 +354,13 @@ K:C
     else {const input=document.createElement('input');input.type='file';input.accept='.abc,.txt,text/plain';input.onchange=async()=>{if(input.files[0])loadABC(await input.files[0].text(),input.files[0].name)};input.click();}
   });
   $('applySource').addEventListener('click',()=>loadABC($('abcSource').value,state.sourceName));
+  $('checkSource').addEventListener('click',validateSourceUI);
+  $('copyDiags').addEventListener('click',()=>{
+    const diags = state.diags || [];
+    copyText('ABC Studio 診断結果\n' + diagText(diags)).then(()=>toast('診断結果をコピーしました'),()=>toast('コピーできませんでした'));
+  });
+  let lintTimer;
+  $('abcSource').addEventListener('input',()=>{clearTimeout(lintTimer);lintTimer=setTimeout(validateSourceUI,500);});
   $('playButton').addEventListener('click',togglePlay);
   $('stopButton').addEventListener('click',stop);
   $('seek').addEventListener('input',event=>seek(event.target.value));

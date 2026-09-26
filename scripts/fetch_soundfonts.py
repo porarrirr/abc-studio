@@ -1,7 +1,7 @@
 """Build the offline FluidR3_GM sample subset used by ABC Studio.
 
 Source: https://github.com/paulrosen/midi-js-soundfonts/tree/gh-pages/FluidR3_GM
-FluidR3_GM samples are CC BY 3.0; see Web/SOUNDFONT-ATTRIBUTION.md.
+FluidR3_GM samples are CC BY 3.0; see SoundFont/SOUNDFONT-ATTRIBUTION.md.
 """
 import base64
 import json
@@ -9,7 +9,7 @@ import pathlib
 import re
 import urllib.request
 
-ROOT = pathlib.Path(__file__).resolve().parents[1] / "Web" / "soundfont"
+ROOT = pathlib.Path(__file__).resolve().parents[1] / "SoundFont"
 INSTRUMENTS = (
     "acoustic_grand_piano", "acoustic_guitar_nylon", "violin", "flute",
     "trumpet", "electric_bass_finger", "choir_aahs", "percussion",

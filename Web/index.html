@@ -40,9 +40,13 @@
         </section>
 
         <section id="sourcePane" class="pane" aria-label="ABCを編集">
-          <div class="panel-heading"><div><span class="section-label">ABC SOURCE</span><h2>記譜を編集</h2></div><button id="applySource" class="primary-small">楽譜に反映</button></div>
+          <div class="panel-heading"><div><span class="section-label">ABC SOURCE</span><h2>記譜を編集</h2></div><div class="source-actions"><button id="checkSource" class="primary-small secondary">検証</button><button id="applySource" class="primary-small">楽譜に反映</button></div></div>
           <textarea id="abcSource" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="ABC 記譜法のテキスト"></textarea>
-          <p class="editor-help">X:、T:、M:、L:、K: を含む ABC を入力してください。複数声部には V: を使います。</p>
+          <div id="diagPanel" class="diag-panel" hidden>
+            <div class="diag-head"><span id="diagSummary"></span><button id="copyDiags" class="diag-copy" type="button">コピー</button></div>
+            <ul id="diagnostics" class="diagnostics" aria-live="polite"></ul>
+          </div>
+          <p class="editor-help">X:、T:、M:、L:、K: を含む ABC を入力してください。複数声部には V: を使います。エラーや警告は行番号付きで上に表示され、タップすると該当行に移動します。</p>
         </section>
       </div>
     </main>

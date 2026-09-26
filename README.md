@@ -19,6 +19,6 @@ Xcode で `ABCStudio.xcodeproj` を開いてビルドします。プロジェク
 
 ## 構成とライセンス
 
-譜面描画・再生には [abcjs 6.7.1](https://github.com/paulrosen/abcjs) を使用しています。オフラインの音色には FluidR3_GM の MP3 サンプルを使用しています。ライセンスと帰属表示は `Web/ABCJS-LICENSE.md` と `Web/SOUNDFONT-ATTRIBUTION.md` を参照してください。abcjs の音色読み込みは同時要求数を 12 に抑えるため、同梱した配布版のバッチサイズを調整しています。
+ABC の解析・診断・譜面描画・再生はすべて Swift / SwiftUI / CoreGraphics / AVAudioEngine で実装したネイティブコードで、WebView や JavaScript は使用していません。オフラインの音色には FluidR3_GM の MP3 サンプルを使用しています。ライセンスと帰属表示は `SoundFont/SOUNDFONT-ATTRIBUTION.md` を参照してください。
 
 音色を再取得するには `python3 scripts/fetch_soundfonts.py` を実行します。
