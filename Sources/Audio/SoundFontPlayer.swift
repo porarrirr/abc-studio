@@ -14,12 +14,17 @@ public final class SoundFontPlayer {
     public var volumeMultiplier: Float = 2.4
     /// Fade baked into the tail of every generated buffer (abcjs fadeLength = 120ms).
     public var releaseFade: TimeInterval = 0.12
+    /// Extra seconds the sample may ring out past the note's end, so sustained
+    /// tones decay naturally instead of stopping dead at the note boundary.
+    public var sustainTail: TimeInterval = 1.0
     /// Very short notes (grace notes, 32nds) still need enough sample to speak.
     public var minimumDuration: TimeInterval = 0.30
     /// Caps per-event buffer memory (8s stereo ≈ 2.8MB per event).
     public var maximumDuration: TimeInterval = 8.0
-    /// Hard clamp to avoid clipping after the gain stage.
-    public var clipLevel: Float = 0.95
+    /// Soft-clip knee/limit: samples below `knee` pass through untouched, above
+    /// it the curve approaches `clipLevel` asymptotically (no harsh hard clip).
+    public var clipKnee: Float = 0.7
+    public var clipLevel: Float = 0.98
 
     private struct DirIndex {
         var midis: [Int]                 // sorted
@@ -48,7 +53,8 @@ public final class SoundFontPlayer {
         guard let source = pitchedBuffer(dir: dir, midi: midi) else { return nil }
         let clamped = min(max(seconds, minimumDuration), maximumDuration)
         let wanted = max(1, AVAudioFrameCount((clamped * Self.sampleRate).rounded(.up)))
-        let frames = min(wanted, source.frameLength)
+        let tailFrames = AVAudioFrameCount((sustainTail * Self.sampleRate).rounded(.down))
+        let frames = min(wanted + tailFrames, source.frameLength)
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
             return nil
         }
@@ -62,8 +68,12 @@ public final class SoundFontPlayer {
             let dst = out.floatChannelData![channel]
             for i in 0..<Int(frames) {
                 var sample = src[i] * gain
-                if sample > clipLevel { sample = clipLevel }
-                else if sample < -clipLevel { sample = -clipLevel }
+                let magnitude = abs(sample)
+                if magnitude > clipKnee {
+                    let over = magnitude - clipKnee
+                    let limit = clipLevel - clipKnee
+                    sample = copysign(clipKnee + over * limit / (limit + over), sample)
+                }
                 if i >= fadeStart {
                     let t = Double(i - fadeStart) / Double(fadeLen)
                     sample *= Float(0.5 * (1 + cos(Double.pi * min(1, t))))

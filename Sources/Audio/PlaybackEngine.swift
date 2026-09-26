@@ -23,6 +23,12 @@ public final class PlaybackEngine: ObservableObject {
     private var sequence: PlaybackSequence?
     private var trackInstruments: [Instrument] = []
     private let soundFont = SoundFontPlayer()
+    /// Shared ambience: playerNodes → auxMixer → reverb → mainMixer.
+    /// Effects have a single input bus, so the tracks must be summed by a
+    /// mixer node first; a light hall makes the dry samples sit in a room.
+    private let auxMixer = AVAudioMixerNode()
+    private let reverb = AVAudioUnitReverb()
+    private var effectsConnected = false
     private var speedPercent = 100
     private var positionBeat: Double = 0     // committed position (pause/seek/load)
 
@@ -53,10 +59,19 @@ public final class PlaybackEngine: ObservableObject {
         isPlaying = false
         self.sequence = sequence
         for node in playerNodes { engine.detach(node) }
+        if !effectsConnected {
+            reverb.loadFactoryPreset(.mediumHall)
+            reverb.wetDryMix = 16
+            engine.attach(auxMixer)
+            engine.attach(reverb)
+            engine.connect(auxMixer, to: reverb, format: soundFont.format)
+            engine.connect(reverb, to: engine.mainMixerNode, format: soundFont.format)
+            effectsConnected = true
+        }
         playerNodes = sequence.tracks.map { _ in AVAudioPlayerNode() }
         for node in playerNodes {
             engine.attach(node)
-            engine.connect(node, to: engine.mainMixerNode, format: soundFont.format)
+            engine.connect(node, to: auxMixer, format: soundFont.format)
         }
         trackInstruments = sequence.tracks.map { track in
             instruments[track.voiceID]
