@@ -1,0 +1,14 @@
+X:1
+T:小さなアンサンブル
+C:ABC Studio
+M:4/4
+L:1/4
+Q:1/4=104
+%%score melody harmony bass
+V:melody clef=treble name="Violin"
+V:harmony clef=treble name="Piano"
+V:bass clef=bass name="Bass"
+K:C
+[V:melody] E F G c | B A G2 | A G F E | D4 |
+[V:harmony] [CEG]2 [DFA]2 | [EGc]2 [CEG]2 | [FAc]2 [CEG]2 | [B,DG]4 |
+[V:bass] C,2 G,2 | E,2 C,2 | F,2 C,2 | G,4 |

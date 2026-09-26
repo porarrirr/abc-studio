@@ -1,0 +1,29 @@
+.DS_Store
+.derived/
+*.xcuserstate
+xcuserdata/
+abcjs-*.tgz
+package/
+
+# Xcode build products and generated project data
+build/
+DerivedData/
+*.ipa
+*.dSYM/
+*.xcarchive/
+*.xccheckout
+*.moved-aside
+*.hmap
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods
+Pods/
+
+# Fastlane output
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
