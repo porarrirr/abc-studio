@@ -44,6 +44,67 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertTrue(book.diagnostics.contains { $0.severity == .error })
     }
 
+    func testInvalidNoteLengthsAreDiagnosedWithoutCrashing() {
+        let book = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC/0 D999999999999999999999 E/////// F |\n")
+        XCTAssertTrue(book.diagnostics.contains { $0.severity == .error })
+        XCTAssertEqual(book.tunes.count, 1)
+        XCTAssertEqual(notes(book.tunes[0]).count, 4)
+        XCTAssertTrue(ABCSequencer.sequence(book.tunes[0]).totalSeconds.isFinite)
+    }
+
+    func testInvalidTemposKeepFiniteDefault() {
+        for tempo in ["0", "1/4=0", "1/4=nan", "1/4=1e300"] {
+            let book = parse("X:1\nT:t\nM:4/4\nL:1/4\nQ:\(tempo)\nK:C\nC |\n")
+            XCTAssertTrue(book.diagnostics.contains { $0.severity == .warning }, tempo)
+            XCTAssertEqual(book.tunes[0].tempo.quarterNoteBPM, 120, tempo)
+            XCTAssertTrue(ABCSequencer.sequence(book.tunes[0]).totalSeconds.isFinite, tempo)
+        }
+    }
+
+    func testEmptyChordIsDiagnosedAndSkipped() {
+        let book = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:C\n[] C |\n")
+        XCTAssertTrue(book.diagnostics.contains { $0.severity == .error })
+        XCTAssertEqual(notes(book.tunes[0]).count, 1)
+        XCTAssertNotNil(ScoreExporter.pngData(tune: book.tunes[0]))
+    }
+
+    func testAccidentalsPersistWithinVoiceAndMeasure() {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nV:1\nV:2\nK:C\n[V:1] ^F F | F =F F |\n[V:2] F F | F F |\n")
+        XCTAssertEqual(notes(t, 0).compactMap { $0.pitches.first?.midi }, [66, 66, 65, 65, 65])
+        XCTAssertEqual(notes(t, 1).compactMap { $0.pitches.first?.midi }, [65, 65, 65, 65])
+
+        let keyed = tune("X:1\nT:t\nM:4/4\nL:1/4\nK:G\nF =F F | F |\n")
+        XCTAssertEqual(notes(keyed).compactMap { $0.pitches.first?.midi }, [66, 65, 65, 66])
+    }
+
+    func testFailedLoadClearsPreviousSequence() {
+        let model = StudioModel()
+        model.loadABC("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC |\n", filename: "valid.abc", persist: false)
+        XCTAssertGreaterThan(model.engine.duration, 0)
+        model.loadABC("invalid ABC", filename: "invalid.abc", persist: false)
+        XCTAssertNil(model.tune)
+        XCTAssertEqual(model.engine.duration, 0)
+        model.shareMIDI()
+        XCTAssertNil(model.shareFile)
+    }
+
+    func testSpeedChangePreservesPlaybackPosition() {
+        let engine = PlaybackEngine()
+        let sequence = PlaybackSequence(tracks: [],
+                                        tempoMap: [TempoPoint(beat: 0, quarterNoteBPM: 120)],
+                                        totalBeats: 100)
+        engine.load(sequence, instruments: [:])
+        engine.play()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        let before = engine.progress
+        XCTAssertGreaterThan(before, 0.005)
+        engine.setSpeed(200)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        let after = engine.progress
+        engine.stop()
+        XCTAssertLessThan(after - before, 0.004, "速度変更で再生位置が飛ばない")
+    }
+
     // MARK: - ビーム(スペース切断)
 
     func testSpaceBreaksBeam() {
@@ -58,6 +119,17 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertTrue(s[3].spaceBefore, "スペースが記録される")
         XCTAssertTrue(s[2].beamEnd, "スペース直前でビームが切れる")
         XCTAssertTrue(s[3].beamStart, "スペース直後でビームが再開する")
+    }
+
+    /// 拍の境界ちょうどでビームが切れること(従来は境界で unitPos が 0 に戻るだけで
+    /// グループが閉じず、小節全体が 1 本のビームになっていた)
+    func testBeamBreaksAtBeatBoundary() {
+        let n = notes(tune("X:1\nT:t\nM:4/4\nL:1/8\nK:C\nCDEFGABc |"))
+        XCTAssertEqual(n.count, 8)
+        for i in stride(from: 0, to: 8, by: 2) {
+            XCTAssertTrue(n[i].beamStart, "\(i) 番目で拍が始まる")
+            XCTAssertTrue(n[i + 1].beamEnd, "\(i + 1) 番目で拍が終わる")
+        }
     }
 
     // MARK: - リピート展開
@@ -161,6 +233,111 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertNotNil(png)
         if let png {
             XCTAssertTrue(png.starts(with: [0x89, 0x50, 0x4E, 0x47])) // PNG シグネチャ
+        }
+    }
+
+    /// 譜面レイアウト: 幅に収まること、段(systems)が上から順に並ぶこと、
+    /// scaled() が全ジオメトリを等倍で拡大すること。
+    func testScoreSystemsAndScaling() {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F | G A B c | c4 |]\n")
+        let score = ScoreEngraver.engrave(t, width: 390)
+        XCTAssertFalse(score.systems.isEmpty, "段情報がある")
+        XCTAssertFalse(score.targets.isEmpty, "音符ターゲットがある")
+        XCTAssertEqual(score.size.width, 390, accuracy: 0.01,
+                       "譜面幅は常にレイアウト幅に収まる(横スクロールしない)")
+        for i in 1..<score.systems.count {
+            XCTAssertGreaterThan(score.systems[i].band.minY, score.systems[i - 1].band.minY,
+                                 "段は上から順に並ぶ")
+        }
+
+        let big = score.scaled(by: 2)
+        XCTAssertEqual(big.size.width, score.size.width * 2, accuracy: 0.01)
+        XCTAssertEqual(big.size.height, score.size.height * 2, accuracy: 0.01)
+        XCTAssertEqual(big.systems.count, score.systems.count)
+        XCTAssertEqual(big.shapes.count, score.shapes.count)
+        if let id = score.targets.keys.sorted().first,
+           let a = score.targets[id], let b = big.targets[id] {
+            XCTAssertEqual(b.rect.midX, a.rect.midX * 2, accuracy: 0.01)
+            XCTAssertEqual(b.rect.midY, a.rect.midY * 2, accuracy: 0.01)
+            XCTAssertEqual(b.shapeRange, a.shapeRange, "shapeRange はそのまま引き継ぐ")
+            XCTAssertEqual(b.system, a.system)
+        }
+    }
+
+    /// 楽譜記号フォント(Bravura)がバンドルから読めること
+    func testMusicFontLoads() {
+        XCTAssertTrue(MusicFont.isAvailable, "Bravura.otf が同梱されている")
+        XCTAssertNotNil(MusicFont.glyph(0xE050, size: 32), "ト音記号のグリフがある")
+    }
+
+    /// 段の構造: band が上から隙間なく並び、全音符が自分の段の中にあり、
+    /// 図形範囲が段ごとに連続して全体を覆うこと(段単位の描画・追従の前提)。
+    func testSystemsTileAndOwnTheirNotes() {
+        let body = Array(repeating: "CDEF GABc", count: 24).joined(separator: " | ")
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/8\nV:1 name=\"Melody\"\nV:2 clef=bass name=\"Bass\"\nK:G\n[V:1] \(body) |]\n[V:2] \(Array(repeating: "C,8", count: 24).joined(separator: " | ")) |]\n")
+        let score = ScoreEngraver.engrave(t, width: 390)
+        XCTAssertGreaterThan(score.systems.count, 3, "長い曲は複数段になる")
+        XCTAssertEqual(score.systems.first?.band.minY ?? -1, 0, accuracy: 0.01)
+        XCTAssertEqual(score.systems.last?.band.maxY ?? -1, score.size.height, accuracy: 0.01)
+        for i in 1..<score.systems.count {
+            XCTAssertEqual(score.systems[i].band.minY, score.systems[i - 1].band.maxY, accuracy: 0.01,
+                           "段 \(i) が前の段に接している")
+            XCTAssertEqual(score.systems[i].shapeRange.lowerBound, score.systems[i - 1].shapeRange.upperBound,
+                           "段 \(i) の図形範囲が連続している")
+        }
+        XCTAssertEqual(score.systems.last?.shapeRange.upperBound, score.shapes.count)
+        for (id, target) in score.targets {
+            let sys = score.systems[target.system]
+            XCTAssertTrue(sys.band.contains(CGPoint(x: target.rect.midX, y: target.rect.midY)),
+                          "音符 \(id) は段 \(target.system) の帯の中にある")
+            XCTAssertLessThanOrEqual(target.rect.maxX, 390 + 0.01, "右端からはみ出さない")
+        }
+        // 各段の五線どうしが重ならない(上の段の下端 < 下の段の上端)
+        for sys in score.systems {
+            XCTAssertGreaterThan(sys.staffBottom - sys.staffTop, 8 * 4 * 2, "2 パートの五線が縦に並ぶ")
+        }
+    }
+
+    /// 拍ごとのビームが譜面でも別々の連桁になること(従来は終了後の開始で
+    /// 同じグループ番号に戻り、小節全体が 1 本に繋がっていた)
+    func testEngravedBeamsFollowBeamGroups() {
+        let four = ScoreEngraver.engrave(tune("X:1\nT:t\nM:4/4\nL:1/8\nK:C\nCDEFGABc |]\n"), width: 600)
+        let one = ScoreEngraver.engrave(tune("X:1\nT:t\nM:6/8\nL:1/8\nK:C\nCDEFGA |]\n"), width: 600)
+        // 連桁 = 横に長く(符頭より幅広)厚みのある 4 頂点の塗り。
+        // 8 分音符 8 個 = 4 本、6/8 の 6 個 = 2 本
+        func beamCount(_ s: EngravedScore) -> Int {
+            s.shapes.filter {
+                guard case .fill(let p, _) = $0 else { return false }
+                var n = 0
+                p.applyWithBlock { e in if e.pointee.type == .addLineToPoint { n += 1 } }
+                let b = p.boundingBoxOfPath
+                return n == 3 && b.width > 12 && b.height >= 3.9
+            }.count
+        }
+        XCTAssertEqual(beamCount(four), 4)
+        XCTAssertEqual(beamCount(one), 2)
+    }
+
+    /// 同時に鳴る音符はパートが違っても同じ x に揃うこと
+    func testSimultaneousNotesAlignAcrossVoices() {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/8\nV:1\nV:2 clef=bass\nK:C\n[V:1] CDEF GABc |]\n[V:2] C,4 G,,4 |]\n")
+        let score = ScoreEngraver.engrave(t, width: 500)
+        let upper = notes(t, 0), lower = notes(t, 1)
+        guard let a0 = score.targets[upper[0].id], let a4 = score.targets[upper[4].id],
+              let b0 = score.targets[lower[0].id], let b1 = score.targets[lower[1].id] else {
+            return XCTFail("ターゲットがない")
+        }
+        XCTAssertEqual(a0.rect.midX, b0.rect.midX, accuracy: 0.01, "1 拍目が揃う")
+        XCTAssertEqual(a4.rect.midX, b1.rect.midX, accuracy: 0.01, "3 拍目が揃う")
+    }
+
+    /// タップ位置から音符を引けること
+    func testTargetLookup() {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F |]\n")
+        let score = ScoreEngraver.engrave(t, width: 390)
+        for (id, target) in score.targets {
+            XCTAssertEqual(score.target(near: CGPoint(x: target.rect.midX, y: target.rect.midY),
+                                        in: target.system), id)
         }
     }
 }

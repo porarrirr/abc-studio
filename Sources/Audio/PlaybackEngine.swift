@@ -33,11 +33,18 @@ public final class PlaybackEngine: ObservableObject {
     /// voiceID → 0.0...1.0 (ミュート/ソロ反映済み)
     private var trackGains: [String: Float] = [:]
     private let soundFont = SoundFontPlayer()
-    /// Shared ambience: playerNodes → auxMixer → reverb → mainMixer.
+    /// Shared ambience: playerNodes → auxMixer → reverb → limiter → mainMixer.
     /// Effects have a single input bus, so the tracks must be summed by a
-    /// mixer node first; a light hall makes the dry samples sit in a room.
+    /// mixer node first; a light hall makes the dry samples sit in a room,
+    /// and the dynamics processor keeps dense passages from clipping.
     private let auxMixer = AVAudioMixerNode()
     private let reverb = AVAudioUnitReverb()
+    private let limiter = AVAudioUnitEffect(audioComponentDescription:
+        AudioComponentDescription(
+            componentType: kAudioUnitType_Effect,
+            componentSubType: kAudioUnitSubType_DynamicsProcessor,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0, componentFlagsMask: 0))
     private var effectsConnected = false
     private var speedPercent = 100
     private var positionBeat: Double = 0     // committed position (pause/seek/load)
@@ -92,11 +99,14 @@ public final class PlaybackEngine: ObservableObject {
         for node in playerNodes { engine.detach(node) }
         if !effectsConnected {
             reverb.loadFactoryPreset(.mediumHall)
-            reverb.wetDryMix = 16
+            reverb.wetDryMix = 18
             engine.attach(auxMixer)
             engine.attach(reverb)
+            engine.attach(limiter)
             engine.connect(auxMixer, to: reverb, format: soundFont.format)
-            engine.connect(reverb, to: engine.mainMixerNode, format: soundFont.format)
+            engine.connect(reverb, to: limiter, format: soundFont.format)
+            engine.connect(limiter, to: engine.mainMixerNode, format: soundFont.format)
+            configureLimiter()
             effectsConnected = true
         }
         playerNodes = sequence.tracks.map { _ in AVAudioPlayerNode() }
@@ -110,12 +120,53 @@ public final class PlaybackEngine: ObservableObject {
                     ? (Instruments.byID("drums") ?? Instruments.all[0])
                     : Instruments.all[0])
         }
+        // Spread ensemble tracks slightly so the mix isn't dead-center;
+        // percussion and the lead voice stay in the middle.
+        for (i, node) in playerNodes.enumerated() {
+            node.pan = Self.trackPan(index: i,
+                                     isPercussion: trackInstruments[i].isDrums)
+        }
         applyTrackGains()
         duration = seconds(forBeat: sequence.totalBeats)
         positionBeat = 0
         lastBeat = 0
         progress = 0
         schedIdx = []
+    }
+
+    /// 読み込み失敗時に旧曲の再生状態を完全に破棄する。
+    public func unload() {
+        stop()
+        sequence = nil
+        for node in playerNodes { engine.detach(node) }
+        playerNodes = []
+        trackInstruments = []
+        trackGains = [:]
+        schedIdx = []
+        duration = 0
+    }
+
+    /// Gentle master-bus limiting: only catches peaks that would clip,
+    /// leaving normal passages untouched (compression threshold ≈ -6 dBFS,
+    /// ceiling ≈ -1 dBFS, fast attack / moderate release).
+    private func configureLimiter() {
+        func set(_ address: AUParameterAddress, _ value: Float) {
+            limiter.auAudioUnit.parameterTree?
+                .parameter(withAddress: address)?.value = value
+        }
+        set(0, -6)      // Compression Threshold (dB)
+        set(1, 5)       // Headroom (dB): output ceiling = threshold + headroom
+        set(4, 0.004)   // Attack Time (s)
+        set(5, 0.12)    // Release Time (s)
+        set(6, 0)       // Master Gain (dB)
+    }
+
+    /// Alternating ±spread for tracks past the lead voice (index 0), keeping
+    /// percussion centred. Returns a player-node pan in -1...1.
+    static func trackPan(index: Int, isPercussion: Bool) -> Float {
+        guard index > 0, !isPercussion else { return 0 }
+        let table: [Float] = [-0.22, 0.22, -0.35, 0.35, -0.14, 0.14, -0.28, 0.28]
+        return table[(index - 1) % table.count]
     }
 
     // MARK: - Volume
@@ -213,9 +264,10 @@ public final class PlaybackEngine: ObservableObject {
 
     /// 50...200, preserves position (reschedules while playing).
     public func setSpeed(_ percent: Int) {
-        speedPercent = min(200, max(50, percent))
-        guard isPlaying else { return }
-        let beat = currentBeat()
+        let nextSpeed = min(200, max(50, percent))
+        guard isPlaying else { speedPercent = nextSpeed; return }
+        let beat = currentBeat() // 変更前の速度で再生位置を確定する
+        speedPercent = nextSpeed
         positionBeat = beat
         haltNodes()
         for node in playerNodes { node.play() }

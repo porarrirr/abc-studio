@@ -12,7 +12,7 @@ public enum ScoreExporter {
     /// 楽譜全体を 1 枚の PNG にする。
     public static func pngData(tune: ABCTune, width: CGFloat = 1200,
                                scale: CGFloat = 2) -> Data? {
-        let score = ScoreEngraver.engrave(tune, width: width)
+        let score = ScoreEngraver.engrave(tune, width: width, header: true)
         let w = Int(score.size.width * scale)
         let h = Int(score.size.height * scale)
         guard w > 0, h > 0, let ctx = CGContext(
@@ -29,7 +29,7 @@ public enum ScoreExporter {
 
     /// 楽譜全体を 1 ページの PDF にする。
     public static func pdfData(tune: ABCTune, width: CGFloat = 800) -> Data? {
-        let score = ScoreEngraver.engrave(tune, width: width)
+        let score = ScoreEngraver.engrave(tune, width: width, header: true)
         var mediaBox = CGRect(origin: .zero, size: score.size)
         let data = NSMutableData()
         guard let consumer = CGDataConsumer(data: data as CFMutableData),

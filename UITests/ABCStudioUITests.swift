@@ -13,9 +13,36 @@ final class ABCStudioUITests: XCTestCase {
         continueAfterFailure = true
     }
 
-    func testScorePlaybackAndNoZoomOnTap() throws {
+    /// 前回の状態に左右されないよう、表示する ABC を起動引数(UserDefaults の
+    /// 引数ドメイン)で渡して起動する。値は plist の引用符付き文字列として解釈される。
+    private func launch(abc: String, extra: [String] = []) -> XCUIApplication {
+        let quoted = "\"" + abc.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n") + "\""
         let app = XCUIApplication()
+        app.launchArguments += ["-lastABC", quoted, "-lastFilename", "\"\""] + extra
         app.launch()
+        return app
+    }
+
+    private static let ensemble = """
+    X:1
+    T:小さなアンサンブル
+    M:4/4
+    L:1/4
+    Q:1/4=104
+    %%score melody harmony bass
+    V:melody clef=treble name="Violin"
+    V:harmony clef=treble name="Piano"
+    V:bass clef=bass name="Bass"
+    K:C
+    [V:melody] E F G c | B A G2 | A G F E | D4 |
+    [V:harmony] [CEG]2 [DFA]2 | [EGc]2 [CEG]2 | [FAc]2 [CEG]2 | [B,DG]4 |
+    [V:bass] C,2 G,2 | E,2 C,2 | F,2 C,2 | G,4 |
+    """
+
+    func testScorePlaybackAndNoZoomOnTap() throws {
+        let app = launch(abc: Self.ensemble)
 
         // 例題が読み込まれ譜面タブが表示される
         XCTAssertTrue(app.staticTexts["SCORE"].waitForExistence(timeout: 5))
@@ -69,5 +96,38 @@ final class ABCStudioUITests: XCTestCase {
             NSPredicate(format: "label == '■' OR label == '停止'")
         ).firstMatch.tap()
         XCTAssertTrue(app.staticTexts["停止"].waitForExistence(timeout: 3))
+    }
+
+    /// 自動追従: 長い曲を再生すると譜面が段ごとに送られ、指でスクロールすると
+    /// 一時停止して「再生位置へ戻る」が出て、押すと追従が再開すること。
+    func testFollowScrollsDuringPlayback() throws {
+        let body = (0..<24).map { i in i % 2 == 0 ? "CDEF GABc" : "cBAG FEDC" }.joined(separator: " | ")
+        let abc = "X:1\nT:Follow test\nM:4/4\nL:1/8\nQ:1/4=200\nK:C\n\(body) |]\n"
+        let app = launch(abc: abc, extra: ["-scoreFollowEnabled", "YES", "-scoreZoom", "1"])
+        XCTAssertTrue(app.staticTexts["Follow test"].waitForExistence(timeout: 5))
+
+        let score = app.otherElements["scoreView"].firstMatch
+        let firstScreen = XCUIScreen.main.screenshot().pngRepresentation
+        saveScreenshot("follow-0")
+
+        let playButton = app.buttons["再生"].firstMatch
+        XCTAssertTrue(playButton.waitForExistence(timeout: 3))
+        playButton.tap()
+        sleep(6)
+        saveScreenshot("follow-1")
+        XCTAssertNotEqual(XCUIScreen.main.screenshot().pngRepresentation, firstScreen,
+                          "再生が進むと譜面が送られる")
+
+        // 手動スクロールで一時停止 → 戻るボタン
+        (score.exists ? score : app.windows.firstMatch).swipeDown()
+        let resume = app.buttons["再生位置へ戻る"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 3), "手動スクロールで追従が一時停止する")
+        saveScreenshot("follow-2-suspended")
+        resume.tap()
+        sleep(1)
+        XCTAssertFalse(resume.exists, "戻ると追従が再開する")
+        saveScreenshot("follow-3-resumed")
+
+        app.buttons["停止"].firstMatch.tap()
     }
 }

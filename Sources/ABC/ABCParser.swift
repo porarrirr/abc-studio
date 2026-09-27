@@ -36,6 +36,8 @@ private let dynamicVelocity: [String: Int] = [
     "ppp": 30, "pp": 45, "p": 55, "mp": 65, "mf": 80,
     "f": 96, "ff": 110, "fff": 120, "sfz": 100, "sf": 100, "fz": 100,
 ]
+/// 入力中の数値が分数演算や反復展開を過大にしないための上限。
+private let maxABCNumber = 4096
 
 /// 1物理行(改行・末尾 \r 除去済み)
 private struct SrcLine {
@@ -94,7 +96,8 @@ private func parseMeter(_ s: String) -> ABCMeter? {
     let parts = t.split(separator: "/")
     if parts.count == 2,
        let n = Int(parts[0].trimmingCharacters(in: .whitespaces)),
-       let d = Int(parts[1].trimmingCharacters(in: .whitespaces)), d > 0 {
+       let d = Int(parts[1].trimmingCharacters(in: .whitespaces)),
+       n > 0, n <= maxABCNumber, d > 0, d <= maxABCNumber {
         return ABCMeter(num: n, den: d)
     }
     return nil
@@ -106,15 +109,18 @@ private func parseLen(_ s: String) -> ABCFraction? {
     let parts = t.split(separator: "/")
     if parts.count == 2,
        let n = Int(parts[0].trimmingCharacters(in: .whitespaces)),
-       let d = Int(parts[1].trimmingCharacters(in: .whitespaces)), d != 0 {
+       let d = Int(parts[1].trimmingCharacters(in: .whitespaces)),
+       n > 0, n <= maxABCNumber, d > 0, d <= maxABCNumber {
         return ABCFraction(n, d)
     }
-    if parts.count == 1, let n = Int(t), n != 0 { return ABCFraction(n, 1) }
+    if parts.count == 1, let n = Int(t), n > 0, n <= maxABCNumber {
+        return ABCFraction(n, 1)
+    }
     return nil
 }
 
 /// Q: テンポ指定("Allegro" 1/4=120 / 1/4=120 / 120)
-private func parseTempo(_ s: String) -> ABCTempo {
+private func parseTempo(_ s: String) -> ABCTempo? {
     var tempo = ABCTempo()
     var rest = s.trimmingCharacters(in: .whitespaces)
     if let o = rest.firstIndex(of: "\"") {
@@ -130,14 +136,25 @@ private func parseTempo(_ s: String) -> ABCTempo {
         let bpmPart = rest[rest.index(after: eq)...]
         var unit = ABCFraction(0, 1)
         var found = false
-        for tok in unitPart.split(whereSeparator: { $0 == " " || $0 == "\t" }) {
-            if let fr = parseLen(String(tok)) { unit = unit + fr; found = true }
+        let units = unitPart.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        guard units.count <= 4 else { return nil }
+        for tok in units {
+            guard let fr = parseLen(String(tok)) else { return nil }
+            unit = unit + fr
+            found = true
         }
         if found { tempo.unit = unit }
-        if let b = Double(bpmPart.trimmingCharacters(in: .whitespaces)) { tempo.bpm = b }
-    } else if let b = Double(rest) {
+        guard let b = Double(bpmPart.trimmingCharacters(in: .whitespaces)),
+              b.isFinite, b > 0 else { return nil }
         tempo.bpm = b
+    } else if let b = Double(rest) {
+        guard b.isFinite, b > 0 else { return nil }
+        tempo.bpm = b
+    } else {
+        return nil
     }
+    guard tempo.quarterNoteBPM.isFinite,
+          (0.01...10_000).contains(tempo.quarterNoteBPM) else { return nil }
     return tempo
 }
 
@@ -428,7 +445,9 @@ private final class Engine {
         case "C": f.composer = f.composer.map { $0 + "\n" + content } ?? content
         case "M": if let m = parseMeter(content) { f.meter = m }
         case "L": if let l = parseLen(content) { f.noteLen = l }
-        case "Q": f.tempo = parseTempo(content)
+        case "Q":
+            if let q = parseTempo(content) { f.tempo = q }
+            else { diag(.warning, line.number, 0, "Q:（テンポ）の値を解釈できません。既定値を使います") }
         case "K":
             if let r = parseKey(content) {
                 f.key = r.key
@@ -457,6 +476,8 @@ private final class TuneContext {
         var clef: ABCClef
         var clefSet: Bool
         var keySignature: ABCKeySignature
+        /// この声部・小節内で明示された臨時記号。キーは五線上の音高 step。
+        var measureAccidentals: [Int: ABCAccidental] = [:]
         var started: Bool = false
         var elements: [ABCElement] = []
         var writtenLen: [Int: ABCFraction] = [:]
@@ -684,7 +705,8 @@ private final class TuneContext {
                 report(.warning, line.number, "L:（基本の音長）の値を解釈できません。1/8 として扱います")
             }
         case "Q":
-            tempo = parseTempo(content)
+            if let q = parseTempo(content) { tempo = q }
+            else { report(.warning, line.number, "Q:（テンポ）の値を解釈できません。直前の値を使います") }
         case "V":
             let t = content
             let idEnd = t.firstIndex(where: { $0.isWhitespace }) ?? t.endIndex
@@ -805,11 +827,13 @@ private final class TuneContext {
                 report(.warning, line, "L:（基本の音長）の値を解釈できません。1/8 として扱います")
             }
         case "Q":
-            emitField(.tempo(parseTempo(content)))
+            if let q = parseTempo(content) { emitField(.tempo(q)) }
+            else { report(.warning, line, "Q:（テンポ）の値を解釈できません。直前の値を使います") }
         case "K":
             if let (k, cl) = parseKey(content) {
                 currentKey = k
                 keyAcc = accMap(k)
+                for vi in voices.indices { voices[vi].measureAccidentals.removeAll() }
                 emitField(.key(k))
                 if let cl = cl {
                     let vi = ensureVoice()
@@ -937,9 +961,14 @@ private final class TuneContext {
             i += 1
         }
         let li = stepOf[upper] ?? 0
-        let delta = acc?.semitones ?? (keyAcc[li] ?? 0)
+        let step = li + 7 * oct
+        let vi = ensureVoice()
+        if let acc { voices[vi].measureAccidentals[step] = acc }
+        let delta = acc?.semitones
+            ?? voices[vi].measureAccidentals[step]?.semitones
+            ?? (keyAcc[li] ?? 0)
         let midi = 60 + oct * 12 + (semitoneOf[upper] ?? 0) + delta
-        return (ABCPitch(step: li + 7 * oct, midi: midi, accidental: acc), i)
+        return (ABCPitch(step: step, midi: midi, accidental: acc), i)
     }
 
     /// 音長修飾子(数字と / の列)
@@ -950,15 +979,33 @@ private final class TuneContext {
         while i < n {
             if C[i].isASCIIDigit {
                 let (v, j) = readInt(L, i)
-                num *= v
+                let (product, overflow) = num.multipliedReportingOverflow(by: v)
+                if overflow || product > maxABCNumber {
+                    report(.error, L.lines[p], "音長が大きすぎます", col: L.cols[p])
+                    return (ABCFraction(1, 1), j)
+                }
+                num = product
                 i = j
             } else if C[i] == "/" {
                 i += 1
                 if i < n && C[i].isASCIIDigit {
                     let (v, j) = readInt(L, i)
-                    den *= v
+                    if v == 0 {
+                        report(.error, L.lines[p], "音長の分母に 0 は使えません", col: L.cols[p])
+                        return (ABCFraction(1, 1), j)
+                    }
+                    let (product, overflow) = den.multipliedReportingOverflow(by: v)
+                    if overflow || product > maxABCNumber {
+                        report(.error, L.lines[p], "音長が大きすぎます", col: L.cols[p])
+                        return (ABCFraction(1, 1), j)
+                    }
+                    den = product
                     i = j
                 } else {
+                    if den > maxABCNumber / 2 {
+                        report(.error, L.lines[p], "音長が大きすぎます", col: L.cols[p])
+                        return (ABCFraction(1, 1), i)
+                    }
                     den *= 2
                 }
             } else {
@@ -970,9 +1017,18 @@ private final class TuneContext {
 
     func readInt(_ L: LogicalLine, _ p: Int) -> (Int, Int) {
         var i = p, v = 0
+        var tooLarge = false
         while i < L.chars.count && L.chars[i].isASCIIDigit {
-            v = v * 10 + (L.chars[i].wholeNumberValue ?? 0)
+            let digit = L.chars[i].wholeNumberValue ?? 0
+            if !tooLarge {
+                if v > (maxABCNumber - digit) / 10 { tooLarge = true }
+                else { v = v * 10 + digit }
+            }
             i += 1
+        }
+        if tooLarge {
+            report(.error, L.lines[p], "数値が大きすぎます", col: L.cols[p])
+            return (1, i)
         }
         return (v, i)
     }
@@ -1050,6 +1106,10 @@ private final class TuneContext {
         }
         if !closed { engine.warnChordOnce(L.lines[p]) }
         let (mult, k) = lengthModifier(L, i)
+        if pitches.isEmpty {
+            report(.error, L.lines[p], "和音に音符がありません", col: L.cols[p])
+            return k
+        }
         emit(pitches: pitches, rest: .none, written: noteLen * mult,
              start: L.offs[p], end: endOff(L, k), line: L.lines[p])
         return k
@@ -1359,6 +1419,7 @@ private final class TuneContext {
         let vi = ensureVoice()
         markStarted(vi)
         voices[vi].elements.append(.bar(ABCBar(kind: kind, endings: endings, line: line)))
+        voices[vi].measureAccidentals.removeAll()
     }
 
     func emitField(_ fc: ABCFieldChange) {

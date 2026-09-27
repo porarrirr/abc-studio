@@ -11,7 +11,8 @@ ABC 記譜法のファイルを読み込み、楽譜を表示して再生する 
 - パートごとのミュート・ソロ、マスター音量
 - 再生・一時停止・停止・シーク・ループ・速度変更（50–200%、スライダー）
 - 音符タップでその位置へシーク
-- 再生中の音符の色付け、譜面カーソル、横・縦スクロール追従
+- SMuFL フォント(Bravura)による譜面描画、パート間で同時に鳴る音符を縦に揃えるレイアウト、ズーム(ボタン・ピンチ)
+- 再生中の音符の色付けと再生位置の列表示、段ごとの自動追従(譜面ヘッダーの「追従」で ON/OFF。再生中に指でスクロールすると一時停止し「再生位置へ戻る」で再開。一時停止は iOS 18 以降)
 - ロック画面・コントロールセンターの再生操作と Now Playing 表示、バックグラウンド音声
 - 割り込み(電話・Siri)とオーディオルート変更への対応、アイドル時のエンジン停止
 - エディタの下書き自動保存、入力中のバックグラウンド検証
@@ -42,6 +43,8 @@ Xcode で `ABCStudio.xcodeproj` を開いてビルドします。プロジェク
 
 ## 構成とライセンス
 
-ABC の解析・診断・譜面描画・再生はすべて Swift / SwiftUI / CoreGraphics / AVAudioEngine で実装したネイティブコードで、WebView や JavaScript は使用していません。オフラインの音色には FluidR3_GM の MP3 サンプルを使用しています。ライセンスと帰属表示は `SoundFont/SOUNDFONT-ATTRIBUTION.md`、アプリ内では右上メニューの「このアプリについて」を参照してください。
+ABC の解析・診断・譜面描画・再生はすべて Swift / SwiftUI / CoreGraphics / AVAudioEngine で実装したネイティブコードで、WebView や JavaScript は使用していません。オフラインの音色は FluidR3_GM サウンドフォント(MIT)から AVAudioUnitSampler でノートごとにレンダリングした AAC サンプルで、サウンドフォント本来のベロシティ応答・サステイン・自然減衰を含みます。譜面記号は Steinberg の Bravura フォント(SIL Open Font License 1.1、`Sources/Fonts/Bravura-OFL.txt`)を同梱して描画します。音色のライセンスと帰属表示は `SoundFont/SOUNDFONT-ATTRIBUTION.md`、アプリ内では右上メニューの「このアプリについて」を参照してください。
 
-音色を再取得するには `python3 scripts/fetch_soundfonts.py` を実行します。
+音色を再生成するには `FluidR3_GM.sf2` を用意して `swift scripts/render_soundfont.swift <sf2のパス>` を実行します。
+
+アプリ本体のソースコードは `LICENSE` のとおり All rights reserved です。音色サンプルは引き続き Fluid (R3) の MIT License の条件に従います。

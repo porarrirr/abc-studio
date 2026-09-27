@@ -1,12 +1,38 @@
-# Sound samples
+ライセンス / 帰属表示
 
-The bundled samples in `soundfont/` come from the FluidR3_GM collection in
-[paulrosen/midi-js-soundfonts](https://github.com/paulrosen/midi-js-soundfonts/tree/gh-pages/FluidR3_GM).
-FluidR3_GM is licensed under [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/us/).
-The samples were converted from the repository's instrument JavaScript files to
-individual MP3 files without changing their audio data. The source repository
-attributes the Fluid soundfont to its original creators. Download and extraction
-are reproducible with `scripts/fetch_soundfonts.py`.
+■ 音色サンプル
+このアプリに同梱される音色サンプル(SoundFont/ 以下の .m4a ファイル)は、
+Fluid (R3) General MIDI SoundFont からソフトウェアサンプラーで
+ノートごとにレンダリングしたものです。
 
-The abcjs library is copyright Paul Rosen and contributors and is distributed
-under the MIT license; see `ABCJS-LICENSE.md`.
+Fluid (R3) SoundFont
+Copyright (c) 2000-2002, 2008 Frank Wen <getfrank@gmail.com>
+Released under the MIT license(全文は下記)。
+
+■ ABC 解析・再生ロジック
+ABC 記譜法の解析・演奏化ロジックは abcjs(Paul Rosen, Gregory Dyke ら、
+MIT license)の実装を参考に独自実装したものです。abcjs 本体は同梱していません。
+
+abcjs — Copyright (c) 2009-2026 Paul Rosen and Gregory Dyke
+Released under the MIT license(全文は下記)。
+
+────────────────────────────────────────
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

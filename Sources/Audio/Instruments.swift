@@ -6,7 +6,7 @@ public struct Instrument: Hashable, Sendable {
     public var label: String
     public var program: Int
     public var icon: String
-    /// バンドル内の音色ディレクトリ名(SoundFont/<dir>/<音名>.mp3)
+    /// バンドル内の音色ディレクトリ名(SoundFont/<dir>/<音名>.m4a)
     public var soundFontDir: String
 
     public var isDrums: Bool { program == 128 }
@@ -14,14 +14,14 @@ public struct Instrument: Hashable, Sendable {
 
 public enum Instruments {
     public static let all: [Instrument] = [
-        Instrument(id: "piano",   label: "ピアノ",   program: 0,   icon: "♩", soundFontDir: "acoustic_grand_piano-mp3"),
-        Instrument(id: "guitar",  label: "ギター",   program: 24,  icon: "♮", soundFontDir: "acoustic_guitar_nylon-mp3"),
-        Instrument(id: "violin",  label: "バイオリン", program: 40, icon: "𝄞", soundFontDir: "violin-mp3"),
-        Instrument(id: "flute",   label: "フルート", program: 73,  icon: "♫", soundFontDir: "flute-mp3"),
-        Instrument(id: "trumpet", label: "トランペット", program: 56, icon: "♬", soundFontDir: "trumpet-mp3"),
-        Instrument(id: "bass",    label: "ベース",   program: 33,  icon: "𝄢", soundFontDir: "electric_bass_finger-mp3"),
-        Instrument(id: "drums",   label: "ドラム",   program: 128, icon: "✳", soundFontDir: "percussion-mp3"),
-        Instrument(id: "choir",   label: "合唱",     program: 52,  icon: "♪", soundFontDir: "choir_aahs-mp3"),
+        Instrument(id: "piano",   label: "ピアノ",   program: 0,   icon: "♩", soundFontDir: "acoustic_grand_piano"),
+        Instrument(id: "guitar",  label: "ギター",   program: 24,  icon: "♮", soundFontDir: "acoustic_guitar_nylon"),
+        Instrument(id: "violin",  label: "バイオリン", program: 40, icon: "𝄞", soundFontDir: "violin"),
+        Instrument(id: "flute",   label: "フルート", program: 73,  icon: "♫", soundFontDir: "flute"),
+        Instrument(id: "trumpet", label: "トランペット", program: 56, icon: "♬", soundFontDir: "trumpet"),
+        Instrument(id: "bass",    label: "ベース",   program: 33,  icon: "𝄢", soundFontDir: "electric_bass_finger"),
+        Instrument(id: "drums",   label: "ドラム",   program: 128, icon: "✳", soundFontDir: "percussion"),
+        Instrument(id: "choir",   label: "合唱",     program: 52,  icon: "♪", soundFontDir: "choir_aahs"),
     ]
 
     public static func byID(_ id: String) -> Instrument? {

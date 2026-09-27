@@ -7,12 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		017386CC0AED12BC814B87CB /* Bravura.otf in Resources */ = {isa = PBXBuildFile; fileRef = 5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */; };
 		1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37637923AE91FC1C667E53C /* PlaybackEngine.swift */; };
 		1B9F3811223E89184D23537D /* ABCStudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */; };
 		347E4CD320B30488D7009399 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F57AAD715D90CC75F90F7685 /* Assets.xcassets */; };
 		4BE4E1AD9E35A5E73EF3EC28 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB288F09B401AC08F8B888B5 /* ShareSheet.swift */; };
 		5BF44BBAB892067F6311F7C6 /* ABCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C9B9B4B38999E35AB7482D /* ABCParser.swift */; };
 		749FA10A30447F72D20DE778 /* ABCStudioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */; };
+		890689B210E175C17953CC3E /* Bravura-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */; };
 		8C631A1AF10E8120AD3BDC84 /* SoundFontPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */; };
 		99BDAE7CCD7679A7A6D5D1F9 /* MIDIWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 502BB13B0AE1B8EE0BBA7165 /* MIDIWriter.swift */; };
 		9D280FA070943162EACDBCEF /* ABCDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */; };
@@ -47,8 +49,10 @@
 		096526D529D1B1DA38555B2E /* ABCBeaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCBeaming.swift; sourceTree = "<group>"; };
 		1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCDiagnostics.swift; sourceTree = "<group>"; };
 		502BB13B0AE1B8EE0BBA7165 /* MIDIWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIWriter.swift; sourceTree = "<group>"; };
-		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Bravura-OFL.txt"; sourceTree = "<group>"; };
 		5809CEC823FC7895ADE3035D /* ScoreExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreExporter.swift; sourceTree = "<group>"; };
+		5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Bravura.otf; sourceTree = "<group>"; };
 		6936D1C777372E9AD5A5FB50 /* ABCStudioTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ABCStudioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Instruments.swift; sourceTree = "<group>"; };
 		76C9B9B4B38999E35AB7482D /* ABCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCParser.swift; sourceTree = "<group>"; };
@@ -112,6 +116,15 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		3567F186CD323C86E9CA6455 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */,
+				5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
 		481D9B6D0526428453216BB0 /* ABC */ = {
 			isa = PBXGroup;
 			children = (
@@ -165,6 +178,7 @@
 				481D9B6D0526428453216BB0 /* ABC */,
 				13DDC0BF98D0C33E0526A05C /* Audio */,
 				4CA26E359C2C184F1F4E9B59 /* Export */,
+				3567F186CD323C86E9CA6455 /* Fonts */,
 				680B2E3F071D1832EB59273B /* Score */,
 			);
 			path = Sources;
@@ -270,6 +284,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				347E4CD320B30488D7009399 /* Assets.xcassets in Resources */,
+				890689B210E175C17953CC3E /* Bravura-OFL.txt in Resources */,
+				017386CC0AED12BC814B87CB /* Bravura.otf in Resources */,
 				D50F8EDF5A306C8676047AE2 /* Samples in Resources */,
 				C0409DFC0AE51DB54ABD39B2 /* SoundFont in Resources */,
 			);
@@ -335,6 +351,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 77V64TWCFD;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -547,6 +564,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 77V64TWCFD;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

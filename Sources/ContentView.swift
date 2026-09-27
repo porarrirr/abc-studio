@@ -17,31 +17,27 @@ private extension Color {
 
 struct ContentView: View {
     @EnvironmentObject private var model: StudioModel
+    @Environment(\.horizontalSizeClass) private var hSize
     @State private var tab = 0
     @State private var seekDrag: Double?
     @State private var speedDrag: Double?
     @State private var showAbout = false
+    /// 譜面の表示倍率と自動追従(次回起動時も維持)
+    @AppStorage("scoreZoom") private var scoreZoom = 1.0
+    @AppStorage("scoreFollowEnabled") private var followEnabled = true
     /// Info.plist でエクスポート宣言した独自 UTI(なければプレーンテキスト扱い)
     private let abcType = UTType("jp.porari.abc") ?? .plainText
     private let tabs = ["楽譜", "楽器", "ABCを編集"]
 
+    /// iPhone(コンパクト幅)では譜面を余白なしの全画面表示にする
+    private var isCompact: Bool { hSize == .compact }
+
     var body: some View {
-        GeometryReader { geo in
-            VStack(spacing: 0) {
-                header
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        intro
-                        workspace(scoreHeight: max(330, geo.size.height * 0.52))
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 22)
-                    .padding(.bottom, 34)
-                    .frame(maxWidth: 1240)
-                    .frame(maxWidth: .infinity)
-                }
-            }
+        VStack(spacing: 0) {
+            header
+            workspace
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.canvas.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) { playerBar }
         .overlay(alignment: .bottom) { toastOverlay }
@@ -156,38 +152,27 @@ struct ContentView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
     }
 
-    // MARK: - イントロ
-
-    private var intro: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("YOUR MUSIC, IN MOTION")
-                .font(.system(size: 10, weight: .heavy))
-                .tracking(1.8)
-                .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-            Text(model.title)
-                .font(.system(size: 31, weight: .bold))
-                .tracking(-1)
-                .foregroundStyle(Color.ink)
-            Text(model.subtitle)
-                .font(.system(size: 13))
-                .foregroundStyle(Color.sub)
-        }
-        .padding(.horizontal, 6)
-        .padding(.bottom, 20)
-    }
-
     // MARK: - ワークスペース(タブ+ペイン)
 
-    private func workspace(scoreHeight: CGFloat) -> some View {
+    /// タブとペインが残りの画面をすべて使う。コンパクト幅ではカード装飾を外して全画面化。
+    private var workspace: some View {
         VStack(spacing: 0) {
             tabBar
-            paneContent(scoreHeight: scoreHeight)
-                .frame(minHeight: 375)
+            paneContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
         }
         .background(Color.card)
-        .clipShape(RoundedRectangle(cornerRadius: 15))
-        .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color(red: 0.875, green: 0.906, blue: 0.875)))
-        .shadow(color: Color(red: 0.125, green: 0.239, blue: 0.212).opacity(0.06), radius: 21, y: 9)
+        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 0 : 15))
+        .overlay(RoundedRectangle(cornerRadius: isCompact ? 0 : 15)
+            .stroke(Color(red: 0.875, green: 0.906, blue: 0.875)))
+        .shadow(color: Color(red: 0.125, green: 0.239, blue: 0.212)
+            .opacity(isCompact ? 0 : 0.06), radius: 21, y: 9)
+        .padding(.horizontal, isCompact ? 0 : 16)
+        .padding(.top, isCompact ? 0 : 14)
+        .padding(.bottom, isCompact ? 0 : 16)
+        .frame(maxWidth: 1240)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var tabBar: some View {
@@ -214,9 +199,9 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func paneContent(scoreHeight: CGFloat) -> some View {
+    private var paneContent: some View {
         switch tab {
-        case 0: scorePane(scoreHeight: scoreHeight)
+        case 0: scorePane
         case 1: partsPane
         default: sourcePane
         }
@@ -224,14 +209,26 @@ struct ContentView: View {
 
     // MARK: - 楽譜ペイン
 
-    private func scorePane(scoreHeight: CGFloat) -> some View {
+    private var scorePane: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("SCORE")
-                    .font(.system(size: 10, weight: .heavy))
-                    .tracking(1.8)
-                    .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-                Spacer()
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("SCORE")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(1.6)
+                            .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
+                        Text(model.subtitle)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.sub)
+                            .lineLimit(1)
+                    }
+                    Text(model.title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
                 if let book = model.book, book.tunes.count > 1 {
                     Picker("曲を選択", selection: Binding(
                         get: { model.selectedTune },
@@ -243,25 +240,68 @@ struct ContentView: View {
                     .pickerStyle(.menu)
                     .font(.system(size: 12))
                     .tint(Color.tealDark)
+                    .labelsHidden()
                 }
-                Text("音符タップでシーク · 再生中の音符を追いかけます")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.faint)
+                zoomControl
+                followToggle
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 17)
-            .padding(.bottom, 6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
 
             if let tune = model.tune {
                 ScoreView(tune: tune, highlight: model.highlight, cursorID: model.cursorID,
+                          isPlaying: model.engine.isPlaying,
+                          zoom: $scoreZoom, followEnabled: followEnabled,
                           onTapNote: { model.seekToElement($0) })
-                    .frame(height: scoreHeight)
-                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Spacer()
-                    .frame(minHeight: 300)
             }
         }
+    }
+
+    private func setZoom(_ z: Double) {
+        scoreZoom = min(ScoreView.maxZoom, max(ScoreView.minZoom, (z * 20).rounded() / 20))
+    }
+
+    private var zoomControl: some View {
+        HStack(spacing: 0) {
+            Button { setZoom(scoreZoom - 0.1) } label: {
+                Image(systemName: "minus").frame(width: 28, height: 30)
+            }
+            .accessibilityLabel("縮小")
+            Button { setZoom(1) } label: {
+                Text("\(Int((scoreZoom * 100).rounded()))%")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .frame(minWidth: 34)
+            }
+            .accessibilityLabel("表示倍率をリセット")
+            Button { setZoom(scoreZoom + 0.1) } label: {
+                Image(systemName: "plus").frame(width: 28, height: 30)
+            }
+            .accessibilityLabel("拡大")
+        }
+        .font(.system(size: 11, weight: .bold))
+        .foregroundStyle(Color.tealDark)
+        .background(Color(red: 0.957, green: 0.973, blue: 0.965))
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color(red: 0.855, green: 0.894, blue: 0.867)))
+    }
+
+    private var followToggle: some View {
+        Button { followEnabled.toggle() } label: {
+            Label("追従", systemImage: followEnabled ? "location.fill" : "location.slash")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(followEnabled ? .white : Color.sub)
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(followEnabled ? Color.teal : Color(red: 0.957, green: 0.973, blue: 0.965))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(followEnabled ? Color.teal : Color(red: 0.855, green: 0.894, blue: 0.867)))
+        }
+        .accessibilityLabel("自動追従")
+        .accessibilityValue(followEnabled ? "オン" : "オフ")
     }
 
     // MARK: - 楽器ペイン
@@ -663,10 +703,16 @@ private struct AboutView: View {
                             Text("バージョン \(version)")
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
+                            Text("© 2026 porari")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
                         }
                     }
                     Text("ABC 記譜法の楽譜表示・再生アプリ。解析・譜面描画・再生はすべてネイティブ実装です。")
                         .font(.system(size: 13))
+                    Text("楽譜記号: Bravura © Steinberg Media Technologies GmbH(SIL Open Font License 1.1)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                     Text(attribution)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)

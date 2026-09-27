@@ -55,6 +55,8 @@ public enum ABCBeaming {
                 if candidate && !crosses { group.append(i) }
                 measurePos = measurePos + note.duration
                 unitPos = unitPos + note.duration
+                // ビーム単位の境界に達したらグループを閉じる(次の音符は新しい拍から)
+                if unitPos >= unit { closeGroup() }
                 while unitPos >= unit { unitPos = unitPos - unit }
             }
         }

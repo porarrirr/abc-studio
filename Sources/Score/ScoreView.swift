@@ -2,102 +2,208 @@ import SwiftUI
 
 /// Engraving cache so that cursor/highlight ticks do not re-run layout.
 private final class ScoreMemo {
-    /// 簡易キー(サイズ系)。ヒット時はさらに sourceText も照合する。
     var key: String = ""
-    var sourceText: String = ""
-    var score: EngravedScore = EngravedScore(size: .zero, shapes: [], targets: [:])
+    var score = EngravedScore(size: .zero, shapes: [], targets: [:])
+    /// レイアウトが変わるたびに増える(段ビューの再描画判定・追従のやり直しに使う)
+    var version = 0
 }
 
-/// Renders an ABCTune as native notation inside a 2-axis scroll view,
-/// with playback highlighting, an auto-scrolling cursor bar and tap-to-seek.
+/// 譜面ビュー。ビューポート幅に合わせて段組みし、段(システム)ごとのビューを
+/// LazyVStack に並べて縦スクロールする。
+///
+/// 自動追従: 再生中にカーソルが次の段へ移ると、その段が画面上端に来るよう
+/// スクロールする(読み進める先が常に下に見える)。再生中に指でスクロールすると
+/// 追従を一時停止し、「再生位置へ戻る」で再開する。追従の ON/OFF とズームは
+/// 呼び出し側(譜面ヘッダー)が持つ。
 public struct ScoreView: View {
     public let tune: ABCTune
     public let highlight: Set<Int>
     public let cursorID: Int?
-    /// 音符をタップしたときに呼ばれる(要素ID)。nil なら無効。
+    public let isPlaying: Bool
+    @Binding public var zoom: Double
+    public let followEnabled: Bool
     public var onTapNote: ((Int) -> Void)?
 
     @State private var memo = ScoreMemo()
+    @State private var followSuspended = false
+    /// ピンチ中の見た目だけの拡大率(指を離したら zoom に確定して組み直す)
+    @State private var pinchScale: CGFloat = 1
 
-    public init(tune: ABCTune, highlight: Set<Int>, cursorID: Int?,
-                onTapNote: ((Int) -> Void)? = nil) {
+    public static let minZoom = 0.6
+    public static let maxZoom = 2.0
+
+    public init(tune: ABCTune, highlight: Set<Int>, cursorID: Int?, isPlaying: Bool,
+                zoom: Binding<Double>, followEnabled: Bool, onTapNote: ((Int) -> Void)? = nil) {
         self.tune = tune
         self.highlight = highlight
         self.cursorID = cursorID
+        self.isPlaying = isPlaying
+        self._zoom = zoom
+        self.followEnabled = followEnabled
         self.onTapNote = onTapNote
     }
 
     public var body: some View {
         GeometryReader { geo in
-            let score = engravedScore(for: max(geo.size.width, 760))
+            let score = engravedScore(for: geo.size.width)
+            let version = memo.version
+            let active = activeSystem(in: score)
             ScrollViewReader { proxy in
-                ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                    ZStack(alignment: .topLeading) {
-                        Canvas { gc, _ in
-                            gc.withCGContext { cg in
-                                // Canvas hands over a y-down (SwiftUI-oriented) context;
-                                // ScorePainter expects plain Quartz orientation, so flip first.
-                                cg.translateBy(x: 0, y: score.size.height)
-                                cg.scaleBy(x: 1, y: -1)
-                                ScorePainter.draw(score, in: cg,
-                                                  highlight: highlight, cursorID: cursorID)
-                            }
-                        }
-                        .frame(width: score.size.width, height: score.size.height)
-
-                        // invisible anchor at the active cursor target for scrollTo
-                        if let cid = cursorID, let t = score.targets[cid] {
-                            Color.clear
-                                .frame(width: max(t.rect.width, 20),
-                                       height: max(t.rect.height, 48))
-                                .position(x: t.rect.midX, y: t.rect.midY)
-                                .id(Self.cursorAnchorID)
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(score.systems.indices, id: \.self) { i in
+                            SystemRow(score: score, index: i, version: version,
+                                      highlight: rowHighlight(i, in: score),
+                                      cursorID: active == i ? cursorID : nil)
+                                .equatable()
+                                .contentShape(Rectangle())
+                                .onTapGesture { p in tap(at: p, system: i, in: score) }
+                                .id(i)
                         }
                     }
-                    .frame(width: score.size.width, height: score.size.height,
-                           alignment: .topLeading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { point in
-                        tapNote(at: point, in: score)
+                    .scaleEffect(pinchScale, anchor: .top)
+                }
+                .modifier(UserScrollObserver { if isPlaying && followEnabled { followSuspended = true } })
+                .simultaneousGesture(
+                    MagnifyGesture()
+                        .onChanged { v in
+                            pinchScale = clampZoom(zoom * v.magnification) / zoom
+                        }
+                        .onEnded { v in
+                            zoom = clampZoom(zoom * v.magnification)
+                            pinchScale = 1
+                        }
+                )
+                .onChange(of: active) { _, new in
+                    if isPlaying { follow(to: new, proxy: proxy) }
+                }
+                .onChange(of: isPlaying) { _, playing in
+                    if playing {
+                        followSuspended = false
+                        follow(to: active, proxy: proxy)
                     }
                 }
-                .onChange(of: cursorID) { _, _ in
-                    guard cursorID != nil else { return }
-                    withAnimation(.linear(duration: 0.12)) {
-                        proxy.scrollTo(Self.cursorAnchorID, anchor: .center)
+                .onChange(of: cursorID == nil) { _, stopped in
+                    if stopped { followSuspended = false }
+                }
+                .onChange(of: version) { _, _ in
+                    // ズーム・回転・曲変更で段組みが変わったら現在の段を追い直す
+                    if isPlaying { follow(to: active, proxy: proxy, animated: false) }
+                }
+                .onChange(of: followEnabled) { _, on in
+                    followSuspended = false
+                    if on && isPlaying { follow(to: active, proxy: proxy) }
+                }
+                .overlay(alignment: .bottom) {
+                    if followSuspended && isPlaying && followEnabled {
+                        resumeButton { follow(to: active, proxy: proxy) }
                     }
                 }
+                .animation(.easeInOut(duration: 0.2), value: followSuspended)
             }
         }
-        .background(Color(red: 0.97, green: 0.97, blue: 0.95))
+        .background(Color.white)
+        .accessibilityIdentifier("scoreView")
     }
 
-    private static let cursorAnchorID = -999_999
+    // MARK: - 追従
 
-    /// タップ位置に最も近い音符ターゲットを探して通知する。
-    /// カーソル領域は細長いので、x 方向に少し広げて判定する。
-    private func tapNote(at point: CGPoint, in score: EngravedScore) {
-        guard let onTapNote else { return }
-        var best: (id: Int, dist: CGFloat)?
-        for (id, target) in score.targets {
-            let r = target.rect.insetBy(dx: -14, dy: -8)
-            guard r.contains(point) else { continue }
-            let d = abs(r.midX - point.x) + abs(r.midY - point.y) * 0.25
-            if best == nil || d < best!.dist { best = (id, d) }
+    private func activeSystem(in score: EngravedScore) -> Int? {
+        cursorID.flatMap { score.targets[$0]?.system }
+    }
+
+    private func follow(to system: Int?, proxy: ScrollViewProxy, animated: Bool = true) {
+        guard followEnabled, !followSuspended, let system else { return }
+        if animated {
+            withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(system, anchor: .top) }
+        } else {
+            proxy.scrollTo(system, anchor: .top)
         }
-        if let hit = best { onTapNote(hit.id) }
     }
 
-    private func engravedScore(for width: CGFloat) -> EngravedScore {
-        // Cheap cache key: source text + tune index + width.
-        // 同じ長さのテキストに編集した場合でも更新されるよう、
-        // キーが一致しても本文そのものを照合する。
-        let key = "\(tune.index)#\(tune.source.count)#\(tune.voices.count)#\(Int(width))"
-        if memo.key == key, memo.sourceText == tune.source { return memo.score }
-        let s = ScoreEngraver.engrave(tune, width: width)
+    private func resumeButton(_ action: @escaping () -> Void) -> some View {
+        Button {
+            followSuspended = false
+            action()
+        } label: {
+            Label("再生位置へ戻る", systemImage: "location.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Color(red: 0.086, green: 0.494, blue: 0.451))
+                .clipShape(Capsule())
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+        }
+        .padding(.bottom, 14)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    // MARK: - タップでシーク
+
+    private func tap(at p: CGPoint, system i: Int, in score: EngravedScore) {
+        guard let onTapNote, score.systems.indices.contains(i) else { return }
+        let global = CGPoint(x: p.x, y: p.y + score.systems[i].band.minY)
+        if let id = score.target(near: global, in: i) { onTapNote(id) }
+    }
+
+    // MARK: - レイアウト(メモ化)
+
+    private func clampZoom(_ z: Double) -> Double { min(Self.maxZoom, max(Self.minZoom, z)) }
+
+    private func rowHighlight(_ i: Int, in score: EngravedScore) -> Set<Int> {
+        highlight.filter { score.targets[$0]?.system == i }
+    }
+
+    private func engravedScore(for viewWidth: CGFloat) -> EngravedScore {
+        let w = max(viewWidth, 160)
+        let z = clampZoom(zoom)
+        let key = "\(tune.index)#\(tune.source.hashValue)#\(Int(w))#\(Int((z * 100).rounded()))"
+        if memo.key == key { return memo.score }
+        // レイアウト幅を 1/z にしてから z 倍 → 表示幅は常に viewWidth
+        memo.score = ScoreEngraver.engrave(tune, width: w / z).scaled(by: z)
         memo.key = key
-        memo.sourceText = tune.source
-        memo.score = s
-        return s
+        memo.version += 1
+        return memo.score
+    }
+}
+
+/// 1 段ぶんの描画。ハイライト・カーソルが変わった段だけ再描画する。
+private struct SystemRow: View, Equatable {
+    let score: EngravedScore
+    let index: Int
+    let version: Int
+    let highlight: Set<Int>
+    let cursorID: Int?
+
+    static func == (a: SystemRow, b: SystemRow) -> Bool {
+        a.index == b.index && a.version == b.version
+            && a.highlight == b.highlight && a.cursorID == b.cursorID
+    }
+
+    var body: some View {
+        let band = score.systems[index].band
+        Canvas { gc, _ in
+            gc.withCGContext { cg in
+                ScorePainter.drawYDown(score, in: cg, highlight: highlight,
+                                       cursorID: cursorID, system: index)
+            }
+        }
+        .frame(width: band.width, height: band.height)
+    }
+}
+
+/// 指によるスクロール操作を検知する(プログラムからの scrollTo では発火しない)。
+private struct UserScrollObserver: ViewModifier {
+    let onUserScroll: () -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollPhaseChange { _, phase in
+                if phase == .interacting { onUserScroll() }
+            }
+        } else {
+            // iOS 17 にはスクロール操作の検知 API がないため、追従の一時停止は行わない
+            content
+        }
     }
 }

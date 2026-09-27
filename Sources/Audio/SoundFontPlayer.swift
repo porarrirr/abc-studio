@@ -1,17 +1,23 @@
 import Foundation
 import AVFoundation
 
-/// Turns bundled MP3 soundfont directories (`<dir>/<NoteName>.mp3`, C4=60) into
+/// Turns bundled soundfont directories (`<dir>/<NoteName>.m4a`, C4=60) into
 /// ready-to-schedule AVAudioPCMBuffers: the nearest available sample is decoded,
 /// pitch-shifted by linear resampling, truncated to the note length with a
 /// baked release fade, and scaled by velocity.
+///
+/// The bundled samples are rendered per-note from the FluidR3_GM soundfont by
+/// `scripts/render_soundfont.swift` and normalised per instrument (~0.8 peak),
+/// so `volumeMultiplier` only needs to undo the velocity scaling, not rescue
+/// a quiet source.
 public final class SoundFontPlayer {
     public static let sampleRate: Double = 44100
     public let format = AVAudioFormat(standardFormatWithSampleRate: SoundFontPlayer.sampleRate,
                                       channels: 2)!
 
-    /// Overall gain (abcjs used soundFontVolumeMultiplier = 2.4; piano samples are quiet).
-    public var volumeMultiplier: Float = 2.4
+    /// Overall gain. The rendered samples are already loud (~0.8 peak), so
+    /// anything above ~1.2 just pushes the mix into the limiter.
+    public var volumeMultiplier: Float = 1.0
     /// Fade baked into the tail of every generated buffer (abcjs fadeLength = 120ms).
     public var releaseFade: TimeInterval = 0.12
     /// Extra seconds the sample may ring out past the note's end, so sustained
@@ -40,8 +46,10 @@ public final class SoundFontPlayer {
     private let lock = NSLock()
 
     public init() {
-        decodedCache.countLimit = 320
-        pitchedCache.countLimit = 320
+        // Rendered notes can run long (piano decay ≈ 10 s ≈ 3.5 MB stereo);
+        // bound the caches by bytes so heavy tunes can't balloon memory.
+        decodedCache.totalCostLimit = 300 * 1024 * 1024
+        pitchedCache.totalCostLimit = 300 * 1024 * 1024
     }
 
     // MARK: - Public API
@@ -138,8 +146,12 @@ public final class SoundFontPlayer {
         var result = DirIndex(midis: [], fileNames: [:])
         if let url = directoryURL(dir),
            let files = try? FileManager.default.contentsOfDirectory(atPath: url.path) {
-            for file in files where file.lowercased().hasSuffix(".mp3") {
-                let stem = String(file.dropLast(4))
+            for file in files {
+                let lower = file.lowercased()
+                let stem: String
+                if lower.hasSuffix(".m4a") { stem = String(file.dropLast(4)) }
+                else if lower.hasSuffix(".mp3") { stem = String(file.dropLast(4)) }
+                else { continue }
                 if let midi = Self.midi(forNoteName: stem) {
                     result.fileNames[midi] = file
                 }
@@ -148,7 +160,7 @@ public final class SoundFontPlayer {
         }
         if result.midis.isEmpty && !missingDirs.contains(dir) {
             missingDirs.insert(dir)
-            print("[SoundFontPlayer] no usable .mp3 files in \(dir)")
+            print("[SoundFontPlayer] no usable sample files in \(dir)")
         }
         dirIndex[dir] = result
         return result
@@ -172,7 +184,7 @@ public final class SoundFontPlayer {
         let semitones = midi - nearest
         let result = semitones == 0 ? decoded : resample(decoded, semitones: semitones)
         lock.lock()
-        pitchedCache.setObject(result, forKey: key)
+        pitchedCache.setObject(result, forKey: key, cost: byteSize(of: result))
         lock.unlock()
         return result
     }
@@ -222,9 +234,13 @@ public final class SoundFontPlayer {
             result = converted
         }
         lock.lock()
-        decodedCache.setObject(result, forKey: key)
+        decodedCache.setObject(result, forKey: key, cost: byteSize(of: result))
         lock.unlock()
         return result
+    }
+
+    private func byteSize(of buffer: AVAudioPCMBuffer) -> Int {
+        Int(buffer.frameCapacity) * Int(format.channelCount) * MemoryLayout<Float>.size
     }
 
     private func convert(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {

@@ -39,16 +39,31 @@ public enum AudioExporter {
         let engine = AVAudioEngine()
         let auxMixer = AVAudioMixerNode()
         let reverb = AVAudioUnitReverb()
+        // PlaybackEngine と同じ auxMixer → reverb → limiter → mainMixer。
+        let limiter = AVAudioUnitEffect(audioComponentDescription:
+            AudioComponentDescription(
+                componentType: kAudioUnitType_Effect,
+                componentSubType: kAudioUnitSubType_DynamicsProcessor,
+                componentManufacturer: kAudioUnitManufacturer_Apple,
+                componentFlags: 0, componentFlagsMask: 0))
 
         try engine.enableManualRenderingMode(.offline, format: format,
                                              maximumFrameCount: 8192)
         engine.attach(auxMixer)
         engine.attach(reverb)
+        engine.attach(limiter)
         reverb.loadFactoryPreset(.mediumHall)
-        reverb.wetDryMix = 16
+        reverb.wetDryMix = 18
         engine.connect(auxMixer, to: reverb, format: format)
-        engine.connect(reverb, to: engine.mainMixerNode, format: format)
+        engine.connect(reverb, to: limiter, format: format)
+        engine.connect(limiter, to: engine.mainMixerNode, format: format)
         engine.mainMixerNode.outputVolume = min(1, max(0, masterVolume))
+        func setLimit(_ address: AUParameterAddress, _ value: Float) {
+            limiter.auAudioUnit.parameterTree?
+                .parameter(withAddress: address)?.value = value
+        }
+        setLimit(0, -6); setLimit(1, 5); setLimit(4, 0.004)
+        setLimit(5, 0.12); setLimit(6, 0)
 
         var nodes: [AVAudioPlayerNode] = []
         for track in sequence.tracks {
@@ -57,6 +72,14 @@ public enum AudioExporter {
             engine.connect(node, to: auxMixer, format: format)
             node.volume = trackGains[track.voiceID] ?? 1
             nodes.append(node)
+        }
+        for (index, track) in sequence.tracks.enumerated() {
+            let instrument = instruments[track.voiceID]
+                ?? (track.isPercussion
+                    ? (Instruments.byID("drums") ?? Instruments.all[0])
+                    : Instruments.all[0])
+            nodes[index].pan = PlaybackEngine.trackPan(index: index,
+                                                       isPercussion: instrument.isDrums)
         }
         try engine.start()
         for node in nodes { node.play() }

@@ -169,12 +169,17 @@ K:C
         book = parsed
         diagnostics = (parsed.diagnostics + ABCDiagnostics.validate(normalized))
             .sorted { ($0.line, $0.severity == .error ? 0 : 1) < ($1.line, $1.severity == .error ? 0 : 1) }
-        engine.stop()
         highlight = []
         cursorID = nil
         guard !parsed.tunes.isEmpty else {
+            sequence = nil
+            engine.unload()
+            selectedTune = 0
+            assignments = [:]
+            shareFile = nil
             status = "読み込みエラー"
             toast(diagnostics.first(where: { $0.severity == .error })?.message ?? "ABC を確認してください")
+            updateNowPlaying()
             return
         }
         selectTune(0)
