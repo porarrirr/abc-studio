@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ABC Studio — ABC記譜法の楽譜ビューア&プレイヤー</title>
+  <meta name="description" content="ABC Studio は、ABC 記譜法で書かれた楽譜を美しく表示し、多彩な音色で再生する iPhone / iPad アプリです。">
+  <meta property="og:title" content="ABC Studio">
+  <meta property="og:description" content="ABC 記譜法の楽譜を、美しく、鳴らす。iPhone / iPad 向け楽譜ビューア&プレイヤー">
+  <meta property="og:image" content="icon.png">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="index.html">
+        <img src="icon.png" alt="ABC Studio アイコン">
+        ABC Studio
+      </a>
+      <nav class="site-nav">
+        <a href="index.html" aria-current="page">トップ</a>
+        <a href="support.html">サポート</a>
+        <a href="privacy.html">プライバシー</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <img class="appicon" src="icon.png" alt="ABC Studio">
+    <h1>ABC Studio</h1>
+    <p class="tagline">ABC 記譜法の楽譜を、美しく、鳴らす。</p>
+    <!-- App Store の URL が決まったら href を差し替えてください -->
+    <a class="store-badge" href="#">App Store で入手</a>
+    <p class="note">iOS 17 以降 / iPhone・iPad 対応</p>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>主な機能</h2>
+      <div class="features">
+        <div class="feature">
+          <div class="icon">🎼</div>
+          <h3>美しい譜面表示</h3>
+          <p>SMuFL 準拠の Bravura フォントによる本格的な譜面描画。ピンチやボタンでズームでき、音符タップでその位置へジャンプします。</p>
+        </div>
+        <div class="feature">
+          <div class="icon">🎹</div>
+          <h3>8 種類の音色で再生</h3>
+          <p>ピアノ、ギター、バイオリン、フルート、トランペット、ベース、ドラム、合唱。V: で定義した複数パートに個別の楽器を割り当てて同時再生できます。</p>
+        </div>
+        <div class="feature">
+          <div class="icon">🎚️</div>
+          <h3>練習に役立つ演奏操作</h3>
+          <p>速度変更(50〜200%)、ループ、シーク、パートごとのミュート/ソロ、再生位置の自動追従。ロック画面やコントロールセンターからも操作できます。</p>
+        </div>
+        <div class="feature">
+          <div class="icon">📂</div>
+          <h3>かんたん読み込み</h3>
+          <p>.abc / .txt ファイルを Files・メールなど他アプリから「このアプリで開く」で直接読み込み。クリップボードからの読み込みやサンプル曲も収録。</p>
+        </div>
+        <div class="feature">
+          <div class="icon">✏️</div>
+          <h3>ABC テキスト編集</h3>
+          <p>内蔵エディタで楽譜を直接編集。入力中にバックグラウンドで検証し、下書きは自動保存されます。複数曲入りファイルは曲を選んで表示。</p>
+        </div>
+        <div class="feature">
+          <div class="icon">📤</div>
+          <h3>多彩な書き出し</h3>
+          <p>ABC ソースの保存・共有、楽譜の PNG / PDF 書き出し、MIDI(SMF)書き出し、演奏の WAV レンダリングに対応。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>対応する ABC 記法</h2>
+      <div class="spec-list">
+        <dl><dt>装飾・表現</dt><dd>タイ、グレースノート、連符、トリル、モルデント、ロール/アルペジオ、スタッカート、フェルマータ</dd></dl>
+        <dl><dt>強弱</dt><dd>クレッシェンド / デクレッシェンドのヘアピン(ベロシティ補間)</dd></dl>
+        <dl><dt>反復</dt><dd>反復記号 |: :| と番号付き括弧 |1 |2 |3…</dd></dl>
+        <dl><dt>パート</dt><dd>V: による複数パート、声部ごとの打楽器パート</dd></dl>
+        <dl><dt>未対応</dt><dd>P:(演奏順)と &amp; による声部分割</dd></dl>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="container">
+      <h2>プライバシー</h2>
+      <p style="text-align:center; max-width:560px; margin:0 auto; color:var(--muted);">
+        ABC Studio は完全オフラインで動作します。個人情報の収集、解析、アカウント登録は一切ありません。
+        読み込んだ楽譜と編集内容はすべてお使いのデバイス内に保存されます。<br>
+        詳しくは<a href="privacy.html">プライバシーポリシー</a>をご覧ください。
+      </p>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container">
+      <nav>
+        <a href="support.html">サポート</a>
+        <a href="privacy.html">プライバシーポリシー</a>
+        <a href="mailto:oooo@rarari.org">お問い合わせ</a>
+      </nav>
+      <p>Copyright © 2026 porari. All rights reserved.</p>
+    </div>
+  </footer>
+</body>
+</html>

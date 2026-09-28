@@ -1088,6 +1088,7 @@ private final class TuneContext {
     func chord(_ L: LogicalLine, _ p: Int) -> Int {
         var i = p + 1
         var pitches: [ABCPitch] = []
+        var firstLength: ABCFraction?
         var closed = false
         while i < L.chars.count {
             let c = L.chars[i]
@@ -1098,8 +1099,12 @@ private final class TuneContext {
             }
             if accidentalCharSet.contains(c) || noteLetterSet.contains(c) {
                 let (pitch, j) = pitchAt(L, i)
-                if let pitch = pitch { pitches.append(pitch) }
-                i = max(j, i + 1)
+                let (length, k) = lengthModifier(L, j)
+                if let pitch = pitch {
+                    if firstLength == nil { firstLength = length }
+                    pitches.append(pitch)
+                }
+                i = max(k, i + 1)
             } else {
                 i += 1
             }
@@ -1110,7 +1115,10 @@ private final class TuneContext {
             report(.error, L.lines[p], "和音に音符がありません", col: L.cols[p])
             return k
         }
-        emit(pitches: pitches, rest: .none, written: noteLen * mult,
+        // ABC uses the first note's length for the chord, multiplied by any
+        // suffix after ']': [C2E2G2]3 and [CEG]6 have the same duration.
+        emit(pitches: pitches, rest: .none,
+             written: noteLen * (firstLength ?? ABCFraction(1, 1)) * mult,
              start: L.offs[p], end: endOff(L, k), line: L.lines[p])
         return k
     }

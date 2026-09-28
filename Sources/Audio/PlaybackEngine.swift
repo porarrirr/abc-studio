@@ -6,7 +6,7 @@ import Darwin
 /// Native playback engine: one AVAudioPlayerNode per track → auxMixer → reverb
 /// → mainMixer. Beats are mapped to seconds via the sequence's tempo map, then
 /// compressed by the speed factor (100 = nominal). Buffers are scheduled at
-/// absolute player-timeline (or host-time) anchors so pause/seek/speed can
+/// a shared player timeline so pause/seek/speed can
 /// reschedule, and only a lookahead window is kept scheduled so memory and
 /// startup cost stay bounded for long tunes.
 public final class PlaybackEngine: ObservableObject {
@@ -27,6 +27,7 @@ public final class PlaybackEngine: ObservableObject {
     public var loopEnabled = false
 
     private let engine = AVAudioEngine()
+    private var makePlayerNode: () -> AVAudioPlayerNode = { AVAudioPlayerNode() }
     private var playerNodes: [AVAudioPlayerNode] = []
     private var sequence: PlaybackSequence?
     private var trackInstruments: [Instrument] = []
@@ -50,7 +51,6 @@ public final class PlaybackEngine: ObservableObject {
     private var positionBeat: Double = 0     // committed position (pause/seek/load)
 
     // Timing state for the current run (since last scheduleEvents).
-    private var anchorPlayerSample: AVAudioFramePosition?  // in playerNodes[0]'s timeline
     private var anchorUptime: TimeInterval = 0             // fallback clock basis
     private var startSec100: TimeInterval = 0              // seconds(forBeat: run start)
     private var timer: DispatchSourceTimer?
@@ -81,6 +81,11 @@ public final class PlaybackEngine: ObservableObject {
 
     public init() {}
 
+    /// Allows scheduling to be observed without depending on audio output latency.
+    init(makePlayerNode: @escaping () -> AVAudioPlayerNode) {
+        self.makePlayerNode = makePlayerNode
+    }
+
     deinit {
         stopTimer()
         shutdownWork?.cancel()
@@ -109,7 +114,7 @@ public final class PlaybackEngine: ObservableObject {
             configureLimiter()
             effectsConnected = true
         }
-        playerNodes = sequence.tracks.map { _ in AVAudioPlayerNode() }
+        playerNodes = sequence.tracks.map { _ in makePlayerNode() }
         for node in playerNodes {
             engine.attach(node)
             engine.connect(node, to: auxMixer, format: soundFont.format)
@@ -198,7 +203,6 @@ public final class PlaybackEngine: ObservableObject {
         activateSession()
         startEngineIfNeeded()
         if positionBeat >= seq.totalBeats { positionBeat = 0 }
-        for node in playerNodes { node.play() }
         scheduleEvents(fromBeat: positionBeat)
         isPlaying = true
         startTimer()
@@ -231,7 +235,6 @@ public final class PlaybackEngine: ObservableObject {
         positionBeat = 0
         lastBeat = 0
         progress = 0
-        anchorPlayerSample = nil
         emitCursor(at: nil)
         releaseAudio()
     }
@@ -244,7 +247,6 @@ public final class PlaybackEngine: ObservableObject {
         progress = beat / seq.totalBeats
         if isPlaying {
             haltNodes()
-            for node in playerNodes { node.play() }
             scheduleEvents(fromBeat: beat)
         }
         emitCursor(at: beat)
@@ -270,7 +272,6 @@ public final class PlaybackEngine: ObservableObject {
         speedPercent = nextSpeed
         positionBeat = beat
         haltNodes()
-        for node in playerNodes { node.play() }
         scheduleEvents(fromBeat: beat)
     }
 
@@ -306,16 +307,8 @@ public final class PlaybackEngine: ObservableObject {
         let rate = Double(speedPercent) / 100
         startSec100 = seconds(forBeat: beat)
         schedHorizon = startSec100 + lookaheadSec * rate
-        anchorUptime = ProcessInfo.processInfo.systemUptime + leadIn
-        anchorPlayerSample = nil
-        if let node = playerNodes.first,
-           let renderTime = node.lastRenderTime,
-           let playerTime = node.playerTime(forNodeTime: renderTime) {
-            anchorPlayerSample = playerTime.sampleTime
-                + AVAudioFramePosition((leadIn * Self.sampleRate).rounded())
-        }
-        let hostAnchor = mach_absolute_time() &+ UInt64(leadIn * Self.hostTicksPerSecond)
-
+        // stop() resets every player timeline to sample zero. Queue the initial
+        // buffers before starting any node, since decoding can exceed leadIn.
         schedIdx = []
         for (index, track) in seq.tracks.enumerated() {
             var k = 0
@@ -326,17 +319,23 @@ public final class PlaybackEngine: ObservableObject {
             }
             // Events overlapping the position: play the remaining subrange.
             while k < track.events.count && track.events[k].startBeat < beat {
-                schedule(track.events[k], track: index, hostAnchor: hostAnchor, tailOf: beat)
+                schedule(track.events[k], track: index, tailOf: beat)
                 k += 1
             }
             // Fill the lookahead window.
             while k < track.events.count
                     && seconds(forBeat: track.events[k].startBeat) < schedHorizon {
-                schedule(track.events[k], track: index, hostAnchor: hostAnchor, tailOf: nil)
+                schedule(track.events[k], track: index, tailOf: nil)
                 k += 1
             }
             schedIdx.append(k)
         }
+        // All tracks share the same zero, including tracks whose first note is
+        // a rest. Later lookahead batches retain these absolute sample times.
+        anchorUptime = ProcessInfo.processInfo.systemUptime + leadIn
+        let startTime = AVAudioTime(hostTime: mach_absolute_time()
+                                   &+ UInt64(leadIn * Self.hostTicksPerSecond))
+        for node in playerNodes { node.play(at: startTime) }
     }
 
     /// 再生中にタイマーから呼ばれ、lookahead 窓の先までイベントを追加する。
@@ -346,12 +345,11 @@ public final class PlaybackEngine: ObservableObject {
         let horizon = seconds(forBeat: currentBeat()) + lookaheadSec * rate
         guard horizon > schedHorizon else { return }
         schedHorizon = horizon
-        let hostAnchor = mach_absolute_time() &+ UInt64(leadIn * Self.hostTicksPerSecond)
         for (index, track) in seq.tracks.enumerated() where index < schedIdx.count {
             var k = schedIdx[index]
             while k < track.events.count
                     && seconds(forBeat: track.events[k].startBeat) < horizon {
-                schedule(track.events[k], track: index, hostAnchor: hostAnchor, tailOf: nil)
+                schedule(track.events[k], track: index, tailOf: nil)
                 k += 1
             }
             schedIdx[index] = k
@@ -360,8 +358,7 @@ public final class PlaybackEngine: ObservableObject {
 
     /// Schedules one event on its track's player node. `tailOf` is set when the
     /// event started before the play position — only its remaining part plays.
-    private func schedule(_ event: PlaybackEvent, track index: Int,
-                          hostAnchor: UInt64, tailOf beat: Double?) {
+    private func schedule(_ event: PlaybackEvent, track index: Int, tailOf beat: Double?) {
         guard index < playerNodes.count, index < trackInstruments.count else { return }
         let rate = Double(speedPercent) / 100
         let instrument = trackInstruments[index]
@@ -374,7 +371,9 @@ public final class PlaybackEngine: ObservableObject {
                                                 velocity: event.velocity) else {
             return    // missing soundfont → skip this event's audio
         }
-        let time = scheduledTime(offset: max(0, offsetSec), hostAnchor: hostAnchor)
+        let time = AVAudioTime(
+            sampleTime: AVAudioFramePosition((max(0, offsetSec) * Self.sampleRate).rounded()),
+            atRate: Self.sampleRate)
         if let beat = beat, event.startBeat < beat {
             // Event overlaps the position: play the remaining subrange.
             // (AVAudioPlayerNode has no buffer-based scheduleSegment, so
@@ -393,23 +392,14 @@ public final class PlaybackEngine: ObservableObject {
         }
     }
 
-    private func scheduledTime(offset: TimeInterval, hostAnchor: UInt64) -> AVAudioTime {
-        if let anchor = anchorPlayerSample {
-            return AVAudioTime(sampleTime: anchor + AVAudioFramePosition((offset * Self.sampleRate).rounded()),
-                               atRate: Self.sampleRate)
-        }
-        return AVAudioTime(hostTime: hostAnchor &+ UInt64(offset * Self.hostTicksPerSecond))
-    }
-
     /// Current playhead position in beats, from the player node's audio timeline
     /// (falling back to the wall clock if the render timeline isn't up yet).
     private func currentBeat() -> Double {
         var elapsed = ProcessInfo.processInfo.systemUptime - anchorUptime
-        if let anchor = anchorPlayerSample,
-           let node = playerNodes.first,
+        if let node = playerNodes.first,
            let renderTime = node.lastRenderTime,
            let playerTime = node.playerTime(forNodeTime: renderTime) {
-            elapsed = TimeInterval(playerTime.sampleTime - anchor) / Self.sampleRate
+            elapsed = TimeInterval(playerTime.sampleTime) / playerTime.sampleRate
         }
         if elapsed < 0 { elapsed = 0 }
         let rate = Double(speedPercent) / 100
@@ -444,7 +434,6 @@ public final class PlaybackEngine: ObservableObject {
                 positionBeat = 0
                 lastBeat = 0
                 haltNodes()
-                for node in playerNodes { node.play() }
                 scheduleEvents(fromBeat: 0)
                 progress = 0
                 emitCursor(at: nil)

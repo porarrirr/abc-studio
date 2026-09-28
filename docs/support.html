@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>サポート — ABC Studio</title>
+  <meta name="description" content="ABC Studio のサポートページ。使い方、よくある質問、お問い合わせ先。">
+  <link rel="icon" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container">
+      <a class="brand" href="index.html">
+        <img src="icon.png" alt="ABC Studio アイコン">
+        ABC Studio
+      </a>
+      <nav class="site-nav">
+        <a href="index.html">トップ</a>
+        <a href="support.html" aria-current="page">サポート</a>
+        <a href="privacy.html">プライバシー</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="page-title">
+    <h1>サポート</h1>
+    <p>ABC Studio の使い方とよくある質問</p>
+  </div>
+
+  <div class="container prose">
+    <h2>基本的な使い方</h2>
+    <ul>
+      <li><strong>ファイルを開く</strong>:Files・メールなど他のアプリで .abc / .txt ファイルを選び「このアプリで開く」、またはアプリ内の読み込みメニューから開きます。</li>
+      <li><strong>クリップボードから読み込む</strong>:ABC テキストをコピーして「クリップボードから読み込み」を選ぶと、その内容を楽譜にできます。</li>
+      <li><strong>曲を選ぶ</strong>:複数の曲が入ったファイルでは、表示する曲を選択できます。</li>
+      <li><strong>編集する</strong>:エディタで ABC テキストを直接編集できます。下書きは自動保存され、入力中にバックグラウンドで検証されます。</li>
+      <li><strong>再生する</strong>:再生・一時停止・停止・シーク・ループ・速度変更(50〜200%)に対応。音符をタップするとその位置へ移動します。</li>
+      <li><strong>パート操作</strong>:V: で定義されたパートごとに楽器の割り当て、ミュート・ソロ、マスター音量を調整できます。</li>
+      <li><strong>追従表示</strong>:再生中の音符に色が付き、譜面が自動で追従します(譜面ヘッダーの「追従」で ON/OFF)。</li>
+      <li><strong>書き出し・共有</strong>:右上メニューから ABC ソースの共有、楽譜の PNG / PDF、MIDI、演奏の WAV を書き出せます。</li>
+    </ul>
+
+    <h2>よくある質問</h2>
+
+    <details class="faq">
+      <summary>対応しているファイル形式は?</summary>
+      <div class="answer"><p>.abc と .txt(プレーンテキスト)に対応しています。</p></div>
+    </details>
+
+    <details class="faq">
+      <summary>対応 OS とデバイスは?</summary>
+      <div class="answer"><p>iOS 17 以降の iPhone / iPad で動作します。</p></div>
+    </details>
+
+    <details class="faq">
+      <summary>使える音色は?</summary>
+      <div class="answer"><p>ピアノ、ギター、バイオリン、フルート、トランペット、ベース、ドラム、合唱の 8 種類です。ドラムは General MIDI の打楽器音程配置、合唱は General MIDI の「Choir Aahs」音色で、歌詞を発声するものではありません。</p></div>
+    </details>
+
+    <details class="faq">
+      <summary>対応している ABC 記法は?</summary>
+      <div class="answer"><p>タイ、グレースノート、連符、装飾音(トリル・モルデント・ロール/アルペジオ)、スタッカート、フェルマータ、クレッシェンド/デクレッシェンドのヘアピン、反復記号 |: :|、番号付き括弧 |1 |2 |3…、声部ごとの打楽器パートに対応しています。P:(演奏順)と &amp; による声部分割は現在未対応です。</p></div>
+    </details>
+
+    <details class="faq">
+      <summary>音が出ないときは?</summary>
+      <div class="answer">
+        <p>マナーモード(消音スイッチ)や本体音量を確認してください。パートがミュート/ソロ設定になっていないか、マスター音量が 0 になっていないかもご確認ください。それでも解決しない場合は、アプリを再起動してお試しください。</p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>ファイルが開けない・表示されないときは?</summary>
+      <div class="answer">
+        <p>ABC テキストに構文エラーがあると、エディタの診断メッセージに問題箇所が表示されます。エラー行を確認して修正してください。ファイル自体が読み込めない場合は、拡張子と文字コード(UTF-8 推奨)をご確認ください。</p>
+      </div>
+    </details>
+
+    <details class="faq">
+      <summary>バックグラウンドで再生できますか?</summary>
+      <div class="answer"><p>はい。ロック画面やコントロールセンターからの再生操作と Now Playing 表示に対応しています。電話や Siri などの割り込み、イヤホン抜差しによるオーディオルート変更にも対応します。</p></div>
+    </details>
+
+    <h2>お問い合わせ</h2>
+    <div class="contact-box">
+      <p>不具合の報告、機能のご要望、その他のご質問はメールでお寄せください。<br>
+      お使いの iOS バージョン、デバイス、操作手順を添えていただくとスムーズです。</p>
+      <p class="mail"><a href="mailto:oooo@rarari.org">oooo@rarari.org</a></p>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container">
+      <nav>
+        <a href="index.html">トップ</a>
+        <a href="privacy.html">プライバシーポリシー</a>
+      </nav>
+      <p>Copyright © 2026 porari. All rights reserved.</p>
+    </div>
+  </footer>
+</body>
+</html>

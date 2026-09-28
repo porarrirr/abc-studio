@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import ABCStudio
 
 /// パーサー/ビーム/シーケンサー/MIDI/楽器推測のユニットテスト
@@ -68,6 +69,53 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertNotNil(ScoreExporter.pngData(tune: book.tunes[0]))
     }
 
+    func testChordDurationsIncludeInnerAndOuterLengths() {
+        let pairs = [
+            ("[C2E2G2]", "[CEG]2"),
+            ("[C2E2G2]3", "[CEG]6"),
+            ("[C/E/G/]", "[CEG]/"),
+            ("[C/2E/2G/2]3/2", "[CEG]3/4"),
+            ("[C2EG]", "[CEG]2"),
+            ("[CE2G2]", "[CEG]"),
+            ("(3[C2E2G2][D2F2A2][E2G2B2]", "(3[CEG]2[DFA]2[EGB]2"),
+            ("[C2E2G2]>[D2F2A2]", "[CEG]2>[DFA]2")
+        ]
+        for (inner, outer) in pairs {
+            let prefix = "X:1\nT:t\nM:4/4\nL:1/8\nK:C\n"
+            let actual = notes(tune(prefix + inner + " A |"))
+            let expected = notes(tune(prefix + outer + " A |"))
+            XCTAssertEqual(actual.map(\.duration), expected.map(\.duration), inner)
+            XCTAssertEqual(actual.map(\.dots), expected.map(\.dots), inner)
+            XCTAssertEqual(actual.map(\.glyph), expected.map(\.glyph), inner)
+            XCTAssertEqual(actual.map { $0.pitches.map(\.midi) },
+                           expected.map { $0.pitches.map(\.midi) }, inner)
+        }
+    }
+
+    func testChordPartsStaySynchronizedAcrossLongRepeatedPassage() {
+        let melody = Array(repeating: "CDEF GABc", count: 24).joined(separator: " | ")
+        let chords = Array(repeating: "[C,4E,4G,4] [G,,4B,,4D,4]", count: 24)
+            .joined(separator: " | ")
+        let s = seq("""
+        X:1
+        T:Part synchronization
+        M:4/4
+        L:1/8
+        V:upper
+        V:lower clef=bass
+        K:C
+        [V:upper] |: \(melody) :|
+        [V:lower] |: \(chords) :|
+        """)
+        let upperStarts = s.tracks[0].events.filter { $0.midi == 60 }.map(\.startBeat)
+        let lowerStarts = s.tracks[1].events.filter { $0.midi == 48 }.map(\.startBeat)
+        XCTAssertEqual(upperStarts.count, 48)
+        XCTAssertEqual(lowerStarts, upperStarts, "毎小節の頭が反復後も一致する")
+        for track in s.tracks {
+            XCTAssertEqual(track.events.map { $0.startBeat + $0.durationBeats }.max(), 192)
+        }
+    }
+
     func testAccidentalsPersistWithinVoiceAndMeasure() {
         let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nV:1\nV:2\nK:C\n[V:1] ^F F | F =F F |\n[V:2] F F | F F |\n")
         XCTAssertEqual(notes(t, 0).compactMap { $0.pitches.first?.midi }, [66, 66, 65, 65, 65])
@@ -103,6 +151,66 @@ final class ABCStudioTests: XCTestCase {
         let after = engine.progress
         engine.stop()
         XCTAssertLessThan(after - before, 0.004, "速度変更で再生位置が飛ばない")
+    }
+
+    func testTracksShareClockWhenLookaheadSchedulesLaterNotes() throws {
+        var nodes: [RecordingPlayerNode] = []
+        let engine = PlaybackEngine(makePlayerNode: {
+            let node = RecordingPlayerNode()
+            nodes.append(node)
+            return node
+        })
+        let tracks = [[0.0, 1.0, 2.0, 24.5], [4.0, 24.5]].enumerated().map { index, beats in
+            PlaybackTrack(voiceID: "\(index)", name: "\(index)", isPercussion: false,
+                          events: beats.map {
+                PlaybackEvent(elementID: index, midi: 60, startBeat: $0,
+                              durationBeats: 0.25, velocity: 80)
+            })
+        }
+        engine.load(PlaybackSequence(tracks: tracks,
+                                     tempoMap: [TempoPoint(beat: 0, quarterNoteBPM: 120)],
+                                     totalBeats: 32), instruments: [:])
+        engine.setMasterVolume(0)
+        defer { engine.stop() }
+        let toppedUp = expectation(description: "両パートの先読み窓の外の音符が追加される")
+        toppedUp.expectedFulfillmentCount = 2
+        let laterFrame = AVAudioFramePosition(12.25 * SoundFontPlayer.sampleRate)
+        for node in nodes {
+            node.onSchedule = { time in
+                if time.isSampleTimeValid && time.sampleTime == laterFrame { toppedUp.fulfill() }
+            }
+        }
+        engine.play()
+        XCTAssertEqual(nodes.map { $0.scheduledTimes.count }, [3, 1], "最初は12秒までを予約する")
+        wait(for: [toppedUp], timeout: 5)
+        let start = try XCTUnwrap(nodes.first?.starts.first)
+        XCTAssertTrue(start.isHostTimeValid)
+        for (index, node) in nodes.enumerated() {
+            XCTAssertEqual(node.starts.count, 1)
+            XCTAssertEqual(node.starts.first?.hostTime, start.hostTime,
+                           "冒頭に休符があるパートも同じ時刻から開始する")
+            XCTAssertTrue(node.initialBuffersPrecedeStart)
+            XCTAssertEqual(node.scheduledTimes.count, tracks[index].events.count)
+            for (time, event) in zip(node.scheduledTimes, tracks[index].events) {
+                XCTAssertTrue(time.isSampleTimeValid)
+                XCTAssertEqual(time.sampleTime,
+                               AVAudioFramePosition(event.startBeat * 0.5 * SoundFontPlayer.sampleRate),
+                               "追加予約でも曲頭を基準にした時刻を保つ")
+            }
+        }
+
+        // A seek, speed change and resume must each establish a shared new zero.
+        nodes.forEach { $0.onSchedule = nil }
+        engine.seek(toFraction: 0.5) // beat 16 = 8 seconds
+        XCTAssertEqual(nodes.map { $0.scheduledTimes.last?.sampleTime },
+                       Array(repeating: AVAudioFramePosition(4.25 * SoundFontPlayer.sampleRate), count: 2))
+        engine.setSpeed(200)
+        XCTAssertEqual(nodes[0].scheduledTimes.last?.sampleTime, nodes[1].scheduledTimes.last?.sampleTime)
+        engine.pause()
+        engine.play()
+        XCTAssertEqual(nodes[0].starts.count, 4)
+        XCTAssertEqual(nodes[0].starts.map(\.hostTime), nodes[1].starts.map(\.hostTime))
+        XCTAssertEqual(nodes[0].scheduledTimes.last?.sampleTime, nodes[1].scheduledTimes.last?.sampleTime)
     }
 
     // MARK: - ビーム(スペース切断)
@@ -339,5 +447,29 @@ final class ABCStudioTests: XCTestCase {
             XCTAssertEqual(score.target(near: CGPoint(x: target.rect.midX, y: target.rect.midY),
                                         in: target.system), id)
         }
+    }
+}
+
+/// Observes the actual commands sent to AVAudioPlayerNode, including timer top-ups.
+private final class RecordingPlayerNode: AVAudioPlayerNode {
+    var scheduledTimes: [AVAudioTime] = []
+    var starts: [AVAudioTime] = []
+    var initialBuffersPrecedeStart = false
+    var onSchedule: ((AVAudioTime) -> Void)?
+
+    override func scheduleBuffer(_ buffer: AVAudioPCMBuffer, at when: AVAudioTime?,
+                                 options: AVAudioPlayerNodeBufferOptions = [],
+                                 completionHandler: AVAudioNodeCompletionHandler? = nil) {
+        if let when {
+            scheduledTimes.append(when)
+            onSchedule?(when)
+        }
+        super.scheduleBuffer(buffer, at: when, options: options, completionHandler: completionHandler)
+    }
+
+    override func play(at when: AVAudioTime?) {
+        if starts.isEmpty { initialBuffersPrecedeStart = !scheduledTimes.isEmpty }
+        if let when { starts.append(when) }
+        super.play(at: when)
     }
 }
