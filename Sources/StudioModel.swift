@@ -42,8 +42,11 @@ final class StudioModel: ObservableObject {
     @Published var shareFile: ShareFile?
     /// 音声レンダリング中
     @Published var isRendering = false
+    /// ライブラリ(保存済みの曲)の一覧。新しい順。
+    @Published var libraryItems: [LibraryItem] = []
 
     let engine = PlaybackEngine()
+    private let libraryStore = LibraryStore()
     /// 初回起動時の例題(app.js の EXAMPLE と同一)
     static let example = """
 X:1
@@ -105,6 +108,7 @@ K:C
     // MARK: - 読み込み
 
     func restore() {
+        refreshLibrary()
         guard let abc = UserDefaults.standard.string(forKey: "lastABC") else {
             loadABC(Self.example, filename: "", persist: false)
             return
@@ -398,6 +402,64 @@ K:C
         }
     }
 
+    // MARK: - ライブラリ
+
+    func refreshLibrary() {
+        libraryItems = libraryStore.items()
+    }
+
+    /// 表示中の ABC をライブラリに保存する。
+    /// 名前は T: フィールド → ファイル名 → 「無題の曲」の順で決める。
+    func saveToLibrary() {
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            toast("保存する ABC がありません"); return
+        }
+        let stem = (sourceName as NSString).deletingPathExtension
+        let name = LibraryStore.title(in: source)
+            ?? (stem.isEmpty ? nil : stem)
+            ?? "無題の曲"
+        do {
+            let item = try libraryStore.save(name: name, abc: source)
+            refreshLibrary()
+            toast("「\(item.name)」をライブラリに保存しました")
+        } catch {
+            toast("ライブラリに保存できませんでした: \(error.localizedDescription)")
+        }
+    }
+
+    /// ライブラリの曲を開く。play=true で開いてそのまま再生する。
+    func openLibraryItem(_ item: LibraryItem, play: Bool = false) {
+        do {
+            loadABC(try libraryStore.read(item), filename: item.name)
+        } catch {
+            toast("ライブラリから開けませんでした: \(error.localizedDescription)")
+            refreshLibrary()
+            return
+        }
+        if play, tune != nil { togglePlay() }
+    }
+
+    func deleteLibraryItem(_ item: LibraryItem) {
+        do {
+            try libraryStore.delete(item)
+            refreshLibrary()
+            toast("「\(item.name)」を削除しました")
+        } catch {
+            toast("削除できませんでした: \(error.localizedDescription)")
+        }
+    }
+
+    func renameLibraryItem(_ item: LibraryItem, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try libraryStore.rename(item, to: trimmed)
+            refreshLibrary()
+        } catch {
+            toast("名前を変更できませんでした: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - 診断・エディタ
 
     /// エディタ入力時の遅延バリデーション(重いパースはバックグラウンドで)と
@@ -426,6 +488,15 @@ K:C
         let parsed = ABCParser.parse(source)
         diagnostics = (parsed.diagnostics + ABCDiagnostics.validate(source))
             .sorted { ($0.line, $0.severity == .error ? 0 : 1) < ($1.line, $1.severity == .error ? 0 : 1) }
+    }
+
+    /// エディタの ABC テキストをすべて削除する。下書き保存も空にして次回起動時に復活しないようにする。
+    func clearSource() {
+        lintTask?.cancel()
+        source = ""
+        diagnostics = []
+        jumpToLine = nil
+        UserDefaults.standard.set("", forKey: "lastABC")
     }
 
     func jump(to diagnostic: ABCDiagnostic) {

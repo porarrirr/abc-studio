@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		01654F036EB7F4E59DD719D7 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39618F97CFC74D714F5475E /* LibraryStore.swift */; };
 		017386CC0AED12BC814B87CB /* Bravura.otf in Resources */ = {isa = PBXBuildFile; fileRef = 5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */; };
 		1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37637923AE91FC1C667E53C /* PlaybackEngine.swift */; };
 		1B9F3811223E89184D23537D /* ABCStudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */; };
@@ -60,6 +61,7 @@
 		8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFontPlayer.swift; sourceTree = "<group>"; };
 		99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCStudioUITests.swift; sourceTree = "<group>"; };
 		A37637923AE91FC1C667E53C /* PlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackEngine.swift; sourceTree = "<group>"; };
+		A39618F97CFC74D714F5475E /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryStore.swift; sourceTree = "<group>"; };
 		A48530F415DAD56B00713974 /* ABCSequencer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCSequencer.swift; sourceTree = "<group>"; };
 		ADFDC6EE95BDAC698FD18FED /* ABCModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCModel.swift; sourceTree = "<group>"; };
 		B4E4407BE361A1C64DF8B504 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 				F57AAD715D90CC75F90F7685 /* Assets.xcassets */,
 				B4E4407BE361A1C64DF8B504 /* ContentView.swift */,
 				CBBC5CAAD0D02CD15B758F85 /* Info.plist */,
+				A39618F97CFC74D714F5475E /* LibraryStore.swift */,
 				FB288F09B401AC08F8B888B5 /* ShareSheet.swift */,
 				BCAF4D872EFAD86A8B52390C /* SourceEditor.swift */,
 				CA80B895588686D897CD6C03 /* StudioModel.swift */,
@@ -315,6 +318,7 @@
 				D9524F24E86D5E8C7A7878F1 /* AudioExporter.swift in Sources */,
 				E5E3E19355972FA9BD86039D /* ContentView.swift in Sources */,
 				BF204BBE984A81E3377115D5 /* Instruments.swift in Sources */,
+				01654F036EB7F4E59DD719D7 /* LibraryStore.swift in Sources */,
 				99BDAE7CCD7679A7A6D5D1F9 /* MIDIWriter.swift in Sources */,
 				1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */,
 				BDB23E7121E6087638E6E328 /* ScoreEngraver.swift in Sources */,

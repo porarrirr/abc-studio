@@ -448,6 +448,55 @@ final class ABCStudioTests: XCTestCase {
                                         in: target.system), id)
         }
     }
+
+    // MARK: - ライブラリ
+
+    private func tempLibrary() -> (LibraryStore, URL) {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lib-test-\(UUID().uuidString)", isDirectory: true)
+        return (LibraryStore(directory: dir), dir)
+    }
+
+    func testLibrarySaveListReadRenameDelete() throws {
+        let (store, dir) = tempLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let abc = "X:1\nT:テスト曲\nX:2\nT:二曲目\nM:4/4\nL:1/4\nK:C\nC |\n"
+        let item = try store.save(name: "テスト曲", abc: abc)
+
+        XCTAssertEqual(try store.read(item), abc)
+        let items = store.items()
+        XCTAssertEqual(items.map(\.id), [item.id])
+        XCTAssertEqual(items.first?.tuneCount, 2, "X: フィールドの数が曲数")
+
+        try store.rename(item, to: "新しい名前")
+        XCTAssertEqual(store.items().first?.name, "新しい名前")
+
+        try store.delete(item)
+        XCTAssertTrue(store.items().isEmpty)
+        XCTAssertThrowsError(try store.read(item))
+    }
+
+    /// index.json が無くてもフォルダ内の .abc を取り込み、T: 行を名前に使う
+    func testLibraryRecoversOrphanFiles() throws {
+        let (store, dir) = tempLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let abc = "X:1\nT:orphan 曲\nM:4/4\nL:1/4\nK:C\nC |\n"
+        try Data(abc.utf8).write(to: dir.appendingPathComponent("x.abc"))
+
+        let items = store.items()
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.first?.name, "orphan 曲")
+        XCTAssertEqual(try store.read(items[0]), abc)
+    }
+
+    /// 消えたファイルは一覧から取り除かれる
+    func testLibraryDropsMissingFiles() throws {
+        let (store, dir) = tempLibrary()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let item = try store.save(name: "消える曲", abc: "X:1\nK:C\nC |\n")
+        try FileManager.default.removeItem(at: dir.appendingPathComponent(item.filename))
+        XCTAssertTrue(store.items().isEmpty)
+    }
 }
 
 /// Observes the actual commands sent to AVAudioPlayerNode, including timer top-ups.

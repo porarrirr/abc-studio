@@ -22,12 +22,17 @@ struct ContentView: View {
     @State private var seekDrag: Double?
     @State private var speedDrag: Double?
     @State private var showAbout = false
+    @State private var showClearConfirm = false
+    /// ライブラリの名前変更/削除確認対象
+    @State private var renamingItem: LibraryItem?
+    @State private var renameText = ""
+    @State private var deletingItem: LibraryItem?
     /// 譜面の表示倍率と自動追従(次回起動時も維持)
     @AppStorage("scoreZoom") private var scoreZoom = 1.0
     @AppStorage("scoreFollowEnabled") private var followEnabled = true
     /// Info.plist でエクスポート宣言した独自 UTI(なければプレーンテキスト扱い)
     private let abcType = UTType("jp.porari.abc") ?? .plainText
-    private let tabs = ["楽譜", "楽器", "ABCを編集"]
+    private let tabs = ["楽譜", "楽器", "ABCを編集", "ライブラリ"]
 
     /// iPhone(コンパクト幅)では譜面を余白なしの全画面表示にする
     private var isCompact: Bool { hSize == .compact }
@@ -120,6 +125,14 @@ struct ContentView: View {
                     }
                 }
                 Divider()
+                Button { model.saveToLibrary() } label: {
+                    Label("現在の曲をライブラリに保存", systemImage: "square.and.arrow.down")
+                }
+                .disabled(model.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button { tab = 3 } label: {
+                    Label("ライブラリを開く", systemImage: "books.vertical")
+                }
+                Divider()
                 Button { model.shareSource() } label: {
                     Label("ABC を保存・共有", systemImage: "doc.text")
                 }
@@ -203,7 +216,8 @@ struct ContentView: View {
         switch tab {
         case 0: scorePane
         case 1: partsPane
-        default: sourcePane
+        case 2: sourcePane
+        default: libraryPane
         }
     }
 
@@ -467,7 +481,29 @@ struct ContentView: View {
                     set: { model.source = $0; model.scheduleValidation() }),
                     jumpToLine: $model.jumpToLine)
                     .frame(height: 300)
+                    .overlay(alignment: .topTrailing) {
+                        Button { showClearConfirm = true } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color(red: 0.643, green: 0.220, blue: 0.165))
+                                .frame(width: 30, height: 30)
+                                .background(Color(red: 0.992, green: 0.941, blue: 0.933))
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
+                                .overlay(RoundedRectangle(cornerRadius: 9)
+                                    .stroke(Color(red: 0.949, green: 0.831, blue: 0.804)))
+                        }
+                        .disabled(model.source.isEmpty)
+                        .opacity(model.source.isEmpty ? 0.45 : 1)
+                        .padding(10)
+                        .accessibilityLabel("入力内容をすべて削除")
+                    }
                     .padding(.horizontal, 16)
+                    .alert("入力内容を削除", isPresented: $showClearConfirm) {
+                        Button("すべて削除", role: .destructive) { model.clearSource() }
+                        Button("キャンセル", role: .cancel) {}
+                    } message: {
+                        Text("エディタの ABC テキストをすべて削除します。楽譜に反映済みの内容は変わりません。")
+                    }
 
                 if !model.diagnostics.isEmpty {
                     diagnosticsPanel
@@ -546,6 +582,144 @@ struct ContentView: View {
         }
         .padding(.horizontal, 16).padding(.top, 10)
         .frame(maxHeight: 200)
+    }
+
+    // MARK: - ライブラリペイン
+
+    private var libraryPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("LIBRARY")
+                            .font(.system(size: 10, weight: .heavy))
+                            .tracking(1.8)
+                            .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
+                        Text("保存した曲")
+                            .font(.system(size: 21, weight: .semibold))
+                            .foregroundStyle(Color.ink)
+                    }
+                    Spacer()
+                    Button("現在の曲を保存") { model.saveToLibrary() }
+                        .buttonStyle(SmallActionStyle(primary: true))
+                        .disabled(model.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(.horizontal, 17).padding(.top, 21).padding(.bottom, 8)
+
+                if model.libraryItems.isEmpty {
+                    Text("まだ曲はありません。「現在の曲を保存」で、表示中の ABC をライブラリに保存できます。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.sub)
+                        .lineSpacing(4)
+                        .padding(13)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(red: 0.937, green: 0.961, blue: 0.937))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(.horizontal, 16).padding(.top, 8)
+                } else {
+                    ForEach(model.libraryItems) { item in
+                        libraryRow(item)
+                    }
+                }
+
+                Text("曲をタップすると開いて「楽譜」タブに移ります。▶ で開いてすぐ再生。長押しで名前の変更・削除ができます。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.sub)
+                    .lineSpacing(4)
+                    .padding(13)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(red: 0.937, green: 0.961, blue: 0.937))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(.horizontal, 16).padding(.vertical, 22)
+            }
+        }
+        .alert("名前を変更", isPresented: Binding(
+            get: { renamingItem != nil },
+            set: { if !$0 { renamingItem = nil } }
+        )) {
+            TextField("名前", text: $renameText)
+            Button("保存") {
+                if let item = renamingItem { model.renameLibraryItem(item, to: renameText) }
+                renamingItem = nil
+            }
+            Button("キャンセル", role: .cancel) { renamingItem = nil }
+        }
+        .alert("ライブラリから削除", isPresented: Binding(
+            get: { deletingItem != nil },
+            set: { if !$0 { deletingItem = nil } }
+        )) {
+            Button("削除", role: .destructive) {
+                if let item = deletingItem { model.deleteLibraryItem(item) }
+                deletingItem = nil
+            }
+            Button("キャンセル", role: .cancel) { deletingItem = nil }
+        } message: {
+            Text("「\(deletingItem?.name ?? "")」を削除します。この操作は取り消せません。")
+        }
+    }
+
+    private func libraryRow(_ item: LibraryItem) -> some View {
+        HStack {
+            HStack(spacing: 12) {
+                Image(systemName: "music.note")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.tealDark)
+                    .frame(width: 37, height: 37)
+                    .background(Color(red: 0.910, green: 0.949, blue: 0.925))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.ink)
+                        .lineLimit(1)
+                    Text(item.createdAt.formatted(date: .numeric, time: .shortened)
+                        + " · \(item.tuneCount) 曲")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.faint)
+                }
+            }
+            Spacer()
+            Button {
+                model.openLibraryItem(item, play: true)
+                tab = 0
+            } label: {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Color.teal)
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel(item.name + "を再生")
+        }
+        .padding(12)
+        .background(Color(red: 0.988, green: 0.992, blue: 0.980))
+        .clipShape(RoundedRectangle(cornerRadius: 13))
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(red: 0.886, green: 0.918, blue: 0.882)))
+        .padding(.horizontal, 16).padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.openLibraryItem(item)
+            tab = 0
+        }
+        .contextMenu {
+            Button { model.openLibraryItem(item); tab = 0 } label: {
+                Label("開く", systemImage: "doc.text.magnifyingglass")
+            }
+            Button { model.openLibraryItem(item, play: true); tab = 0 } label: {
+                Label("再生", systemImage: "play")
+            }
+            Divider()
+            Button {
+                renameText = item.name
+                renamingItem = item
+            } label: {
+                Label("名前を変更", systemImage: "pencil")
+            }
+            Button(role: .destructive) { deletingItem = item } label: {
+                Label("削除", systemImage: "trash")
+            }
+        }
     }
 
     // MARK: - プレイヤーバー
