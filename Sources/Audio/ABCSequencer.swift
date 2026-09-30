@@ -41,14 +41,28 @@ public struct TempoPoint: Sendable {
     }
 }
 
+/// 拍位置での拍子変更(MIDI エクスポートの拍子メタイベント用)
+public struct MeterPoint: Sendable {
+    public var beat: Double
+    public var meter: ABCMeter
+
+    public init(beat: Double, meter: ABCMeter) {
+        self.beat = beat
+        self.meter = meter
+    }
+}
+
 public struct PlaybackSequence: Sendable {
     public var tracks: [PlaybackTrack]
     public var tempoMap: [TempoPoint]   // sorted, first at beat 0
+    public var meterMap: [MeterPoint]   // sorted, beat 0 はヘッダ拍子が入る
     public var totalBeats: Double
 
-    public init(tracks: [PlaybackTrack], tempoMap: [TempoPoint], totalBeats: Double) {
+    public init(tracks: [PlaybackTrack], tempoMap: [TempoPoint], totalBeats: Double,
+                meterMap: [MeterPoint] = []) {
         self.tracks = tracks
         self.tempoMap = tempoMap
+        self.meterMap = meterMap
         self.totalBeats = totalBeats
     }
 
@@ -92,11 +106,12 @@ public enum ABCSequencer {
         // Beat → qnBPM. Beat 0 always carries the tune header tempo; an inline
         // tempo at beat 0 may overwrite it.
         var tempoPoints: [Double: Double] = [0: tune.tempo.quarterNoteBPM]
+        var meterPoints: [(beat: Double, meter: ABCMeter)] = []
         var tracks: [PlaybackTrack] = []
         var totalBeats = 0.0
         var fermatas: [(start: Double, end: Double)] = []
         for voice in tune.voices {
-            let result = sequenceVoice(voice, tempoPoints: &tempoPoints)
+            let result = sequenceVoice(voice, tempoPoints: &tempoPoints, meterPoints: &meterPoints)
             totalBeats = max(totalBeats, result.finalBeat)
             tracks.append(result.track)
             fermatas += result.fermatas
@@ -110,7 +125,15 @@ public enum ABCSequencer {
         let tempoMap = tempoPoints
             .map { TempoPoint(beat: $0.key, quarterNoteBPM: $0.value) }
             .sorted { $0.beat < $1.beat }
-        return PlaybackSequence(tracks: tracks, tempoMap: tempoMap, totalBeats: totalBeats)
+        // 拍子変化は全声部を横断して集約(同一拍の重複は後勝ち)。beat 0 はヘッダ拍子をシードする。
+        var meterByBeat: [Double: ABCMeter] = [:]
+        for p in meterPoints { meterByBeat[p.beat] = p.meter }
+        if meterByBeat[0] == nil { meterByBeat[0] = tune.meter }
+        let meterMap = meterByBeat
+            .map { MeterPoint(beat: $0.key, meter: $0.value) }
+            .sorted { $0.beat < $1.beat }
+        return PlaybackSequence(tracks: tracks, tempoMap: tempoMap, totalBeats: totalBeats,
+                                meterMap: meterMap)
     }
 
     /// フェルマータ区間をテンポマップのディップに変換する。
@@ -203,7 +226,8 @@ public enum ABCSequencer {
     }
 
     private static func sequenceVoice(_ voice: ABCVoice,
-                                      tempoPoints: inout [Double: Double])
+                                      tempoPoints: inout [Double: Double],
+                                      meterPoints: inout [(beat: Double, meter: ABCMeter)])
         -> (track: PlaybackTrack, finalBeat: Double, fermatas: [(start: Double, end: Double)]) {
         let measures = splitMeasures(voice)
         var events: [PlaybackEvent] = []
@@ -213,6 +237,9 @@ public enum ABCSequencer {
         var fermatas: [(start: Double, end: Double)] = []
         var openHairpin: (start: Double, velocity: Double, up: Bool)?
         var hairpins: [(start: Double, end: Double, v0: Double, v1: Double, up: Bool)] = []
+        // 装飾音の上方隣音などを調に沿って解決するため、声部の現在の調を追跡する
+        var keyAcc: [Int: Int] = [:]
+        for a in voice.keySignature.accidentals { keyAcc[a.letter] = a.accidental.semitones }
         // Stack of open repeat sections (innermost last). start = measure index
         // of the section's first measure; end = last measure of the ending run
         // that followed its :| (nil = unknown / unclosed).
@@ -244,10 +271,18 @@ public enum ABCSequencer {
                     switch element {
                     case .note(let note):
                         emit(note, &events, &beat, &velocity, &pendingTies,
-                             &fermatas, &openHairpin, &hairpins)
+                             &fermatas, &openHairpin, &hairpins, keyAcc)
                     case .fieldChange(let change):
-                        if case .tempo(let tempo) = change {
+                        switch change {
+                        case .tempo(let tempo):
                             tempoPoints[beat] = tempo.quarterNoteBPM
+                        case .meter(let meter):
+                            meterPoints.append((beat, meter))
+                        case .key(let key):
+                            keyAcc = [:]
+                            for a in key.accidentals { keyAcc[a.letter] = a.accidental.semitones }
+                        case .noteLength:
+                            break   // 基本音長の変更は各音符の duration に反映済み
                         }
                     case .bar:
                         break
@@ -342,6 +377,7 @@ public enum ABCSequencer {
     /// Emits one note element: grace events, then per-pitch events with tie
     /// merging. Realises trill/mordent/roll ornaments and staccato, records
     /// fermata ranges and hairpin spans for post-processing.
+    /// 装飾とグレースは休符にも適用する(フェルマータ付き休符 `Hz` など)。
     private static func emit(_ note: ABCNote,
                              _ events: inout [PlaybackEvent],
                              _ beat: inout Double,
@@ -349,14 +385,9 @@ public enum ABCSequencer {
                              _ pendingTies: inout [Int: Int],
                              _ fermatas: inout [(start: Double, end: Double)],
                              _ openHairpin: inout (start: Double, velocity: Double, up: Bool)?,
-                             _ hairpins: inout [(start: Double, end: Double, v0: Double, v1: Double, up: Bool)]) {
+                             _ hairpins: inout [(start: Double, end: Double, v0: Double, v1: Double, up: Bool)],
+                             _ keyAcc: [Int: Int]) {
         let dur = note.duration.value * 4
-        if note.isRest {
-            // A rest breaks any pending tie chain and advances the clock.
-            pendingTies.removeAll()
-            beat += dur
-            return
-        }
         var noteVelocity = velocity
         var accented = false
         var staccato = false
@@ -397,7 +428,7 @@ public enum ABCSequencer {
         if accented { noteVelocity = min(127, noteVelocity * 1.15) }
 
         // Grace notes: each takes 1/32 beat, the LAST one ending exactly at the
-        // main note start. Clamped to ≥ 0.
+        // main note start. Clamped to ≥ 0. 親が休符でも(珍しいが)鳴らす。
         let graceCount = note.graceNotes.count
         for (j, grace) in note.graceNotes.enumerated() {
             let end = beat - Double(graceCount - 1 - j) * graceBeats
@@ -409,6 +440,14 @@ public enum ABCSequencer {
                                             startBeat: start, durationBeats: graceDur,
                                             velocity: noteVelocity))
             }
+        }
+
+        if note.isRest {
+            // A rest breaks any pending tie chain and advances the clock.
+            // 装飾(フェルマータ・強弱・ヘアピン)は上で既に適用済み。
+            pendingTies.removeAll()
+            beat += dur
+            return
         }
 
         // スタッカートは発音時間だけ短くし、拍(次の音符位置)は変えない
@@ -424,10 +463,14 @@ public enum ABCSequencer {
                     pendingTies.removeValue(forKey: pitch.midi)
                 }
             } else if trill {
-                emitTrill(noteID: note.id, midi: pitch.midi, at: beat, dur: soundingDur,
+                emitTrill(noteID: note.id, midi: pitch.midi,
+                          upperMidi: upperNeighbor(pitch, keyAcc: keyAcc),
+                          at: beat, dur: soundingDur,
                           velocity: noteVelocity, into: &events)
             } else if mordent {
-                emitMordent(noteID: note.id, midi: pitch.midi, at: beat, dur: soundingDur,
+                emitMordent(noteID: note.id, midi: pitch.midi,
+                            upperMidi: upperNeighbor(pitch, keyAcc: keyAcc),
+                            at: beat, dur: soundingDur,
                             velocity: noteVelocity, into: &events)
             } else {
                 // ロール(アルペジオ)は和音の各音をわずかにずらして鳴らす
@@ -448,14 +491,25 @@ public enum ABCSequencer {
         beat += dur
     }
 
-    /// トリルを主音と上方2半音の16分相当の交替として実演奏化する。
-    private static func emitTrill(noteID: Int, midi: Int, at beat: Double, dur: Double,
-                                  velocity: Double, into events: inout [PlaybackEvent]) {
+    /// 主音の上方隣音の midi。主音の上の音名(diatonic step+1)に調号の臨時記号を適用する。
+    /// 小節内の書き込み臨時記号はモデルに残っていないため、調号のみを見る。
+    private static func upperNeighbor(_ pitch: ABCPitch, keyAcc: [Int: Int]) -> Int {
+        let step2 = pitch.step + 1
+        let li = ((step2 % 7) + 7) % 7          // 音名 0-6 (C-B)
+        let oct = (step2 - li) / 7              // floor division(負の step 対応)
+        let natural = [0, 2, 4, 5, 7, 9, 11][li]
+        return 60 + oct * 12 + natural + (keyAcc[li] ?? 0)
+    }
+
+    /// トリルを主音と上方隣音の32分相当(ornamentUnit)の交替として実演奏化する。
+    private static func emitTrill(noteID: Int, midi: Int, upperMidi: Int, at beat: Double,
+                                  dur: Double, velocity: Double,
+                                  into events: inout [PlaybackEvent]) {
         var t = 0.0
         var upper = false
         while t < dur - 1e-9 {
             let seg = min(ornamentUnit, dur - t)
-            events.append(PlaybackEvent(elementID: noteID, midi: upper ? midi + 2 : midi,
+            events.append(PlaybackEvent(elementID: noteID, midi: upper ? upperMidi : midi,
                                         startBeat: beat + t, durationBeats: seg,
                                         velocity: velocity))
             upper.toggle()
@@ -463,15 +517,16 @@ public enum ABCSequencer {
         }
     }
 
-    /// モルデントを 主音→上方音→主音 の短い区切りとして実演奏化する。
-    private static func emitMordent(noteID: Int, midi: Int, at beat: Double, dur: Double,
-                                    velocity: Double, into events: inout [PlaybackEvent]) {
+    /// モルデントを 主音→上方隣音→主音 の短い区切りとして実演奏化する。
+    private static func emitMordent(noteID: Int, midi: Int, upperMidi: Int, at beat: Double,
+                                    dur: Double, velocity: Double,
+                                    into events: inout [PlaybackEvent]) {
         let seg = min(ornamentUnit, dur / 3)
         guard seg > 0 else { return }
         events.append(PlaybackEvent(elementID: noteID, midi: midi,
                                     startBeat: beat, durationBeats: seg,
                                     velocity: velocity))
-        events.append(PlaybackEvent(elementID: noteID, midi: midi + 2,
+        events.append(PlaybackEvent(elementID: noteID, midi: upperMidi,
                                     startBeat: beat + seg, durationBeats: seg,
                                     velocity: velocity))
         events.append(PlaybackEvent(elementID: noteID, midi: midi,

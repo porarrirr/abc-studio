@@ -2,8 +2,6 @@
 .derived/
 *.xcuserstate
 xcuserdata/
-abcjs-*.tgz
-package/
 
 # Xcode build products and generated project data
 build/

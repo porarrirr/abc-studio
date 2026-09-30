@@ -309,10 +309,69 @@ final class ABCStudioTests: XCTestCase {
     // MARK: - 楽器推測
 
     func testInstrumentGuess() {
-        XCTAssertEqual(Instruments.guess(forPartName: "Bass Drum").id, "drums")
+        XCTAssertEqual(Instruments.guess(forPartName: "Bass Drum").id, "bass_drum")
         XCTAssertEqual(Instruments.guess(forPartName: "Bass").id, "bass")
         XCTAssertEqual(Instruments.guess(forPartName: "Violin").id, "violin")
         XCTAssertEqual(Instruments.guess(forPartName: "Piano").id, "piano")
+    }
+
+    func testOrchestralAndJazzPartNames() {
+        let cases: [(String, String)] = [
+            ("Flauto", "flute"), ("Oboe", "oboe"), ("Corni in C", "horn"),
+            ("Trombe in C", "trumpet"), ("Timpani (C-G)", "timpani"),
+            ("Violino I", "violin"), ("Violino II", "violin"), ("Viola", "viola"),
+            ("Violoncello e Basso", "cello_bass"), ("Contrabbassi", "contrabass"),
+            ("Bassoon", "bassoon"), ("Cor anglais", "english_horn"),
+            ("Tenor Saxophone", "tenor_sax"), ("Baritone Sax", "baritone_sax"),
+            ("Electric Piano", "electric_piano"), ("Muted Trumpet", "muted_trumpet"),
+            ("Vibraphone", "vibraphone"), ("大太鼓", "bass_drum"),
+            ("Cl.", "clarinet"), ("Vln. II", "violin")
+        ]
+        for (name, expected) in cases {
+            XCTAssertEqual(Instruments.guess(forPartName: name).id, expected, name)
+        }
+    }
+
+    func testEveryInstrumentHasBundledAudibleSamples() throws {
+        XCTAssertEqual(Set(Instruments.all.map(\.id)).count, Instruments.all.count)
+        let root = try XCTUnwrap(Bundle.main.resourceURL).appendingPathComponent("SoundFont")
+        let player = SoundFontPlayer()
+        var checked = Set<String>()
+        for instrument in Instruments.all {
+            XCTAssertTrue(Instruments.categories.contains(instrument.category))
+            let directory = root.appendingPathComponent(instrument.soundFontDir)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: directory.path), instrument.id)
+            let note = instrument.soundingNote(60)
+            if checked.insert("\(instrument.soundFontDir)|\(note)").inserted {
+                let buffer = try XCTUnwrap(player.makeBuffer(dir: instrument.soundFontDir,
+                    midi: note, seconds: 1, velocity: 110), instrument.id)
+                XCTAssertGreaterThan(buffer.frameLength, 0, instrument.id)
+                let samples = try XCTUnwrap(buffer.floatChannelData)[0]
+                let peak = (0..<Int(buffer.frameLength)).reduce(Float(0)) { max($0, abs(samples[$1])) }
+                XCTAssertGreaterThan(peak, 0.001, instrument.id)
+            }
+        }
+    }
+
+    func testCombinedCelloBassExportsBothInstruments() {
+        let track = PlaybackTrack(voiceID: "1", name: "Violoncello e Basso", isPercussion: false,
+            events: [PlaybackEvent(elementID: 1, midi: 48, startBeat: 0, durationBeats: 1, velocity: 100)])
+        let sequence = PlaybackSequence(tracks: [track], tempoMap: [TempoPoint(beat: 0, quarterNoteBPM: 120)], totalBeats: 1)
+        let bytes = [UInt8](MIDIWriter.data(for: sequence, instruments: ["1": Instruments.byID("cello_bass")!]))
+        XCTAssertEqual(bytes[11], 3) // テンポ＋チェロ＋コントラバス
+        XCTAssertTrue((0..<(bytes.count - 1)).contains { Array(bytes[$0...($0 + 1)]) == [0xC0, 42] })
+        XCTAssertTrue((0..<(bytes.count - 1)).contains { Array(bytes[$0...($0 + 1)]) == [0xC1, 43] })
+    }
+
+    func testAssignedPercussionMIDIChannelAndPitch() {
+        let instrument = Instruments.byID("triangle")!
+        let track = PlaybackTrack(voiceID: "1", name: "Triangle", isPercussion: false,
+            events: [PlaybackEvent(elementID: 1, midi: 60, startBeat: 0, durationBeats: 1, velocity: 100)])
+        let sequence = PlaybackSequence(tracks: [track], tempoMap: [TempoPoint(beat: 0, quarterNoteBPM: 120)], totalBeats: 1)
+        let bytes = [UInt8](MIDIWriter.data(for: sequence, instruments: ["1": instrument]))
+        XCTAssertEqual(instrument.soundingNote(60), 81)
+        XCTAssertTrue((0..<(bytes.count - 2)).contains { Array(bytes[$0...($0 + 2)]) == [0x99, 81, 100] })
+        XCTAssertEqual(Instruments.byID("timpani")!.soundingNote(60), 60)
     }
 
     // MARK: - MIDI
@@ -496,6 +555,245 @@ final class ABCStudioTests: XCTestCase {
         let item = try store.save(name: "消える曲", abc: "X:1\nK:C\nC |\n")
         try FileManager.default.removeItem(at: dir.appendingPathComponent(item.filename))
         XCTAssertTrue(store.items().isEmpty)
+    }
+
+    // MARK: - レビュー指摘の回帰テスト
+
+    /// 各音部記号の最下線ステップ(C4=0)。公開値なので誤りは利用者を誤導する。
+    func testClefBottomLineSteps() {
+        XCTAssertEqual(ABCClef.treble.bottomLineStep, 2)    // E4
+        XCTAssertEqual(ABCClef.bass.bottomLineStep, -10)    // G2
+        XCTAssertEqual(ABCClef.alto.bottomLineStep, -4)     // F3
+        XCTAssertEqual(ABCClef.tenor.bottomLineStep, -6)    // D3
+    }
+
+    /// 休符のフェルマータ(Hz)もテンポマップのディップになる
+    /// (従来は休符が装飾処理の前に早期リターンしていて無視されていた)
+    func testFermataOnRestDipsTempo() {
+        let s = seq("X:1\nT:t\nM:4/4\nL:1/4\nQ:1/4=100\nK:C\nHz C |\n")
+        XCTAssertTrue(s.tempoMap.contains { $0.quarterNoteBPM < 99 },
+                      "休符のフェルマータでテンポが落ちる")
+        XCTAssertTrue(s.tempoMap.contains { $0.beat > 0 && abs($0.quarterNoteBPM - 100) < 0.01 },
+                      "休符のあとでテンポが戻る")
+    }
+
+    /// フェルマータ終端の復帰テンポが、同じ拍にある明示的な Q: を消さない
+    func testFermataRestoreKeepsExplicitTempo() {
+        let s = seq("X:1\nT:t\nM:4/4\nL:1/4\nQ:1/4=100\nK:C\nHC2 [Q:1/4=60] D2 |]\n")
+        let atEnd = s.tempoMap.filter { abs($0.beat - 2) < 0.001 }
+        XCTAssertEqual(atEnd.count, 1)
+        XCTAssertEqual(atEnd.first?.quarterNoteBPM ?? 0, 60, accuracy: 0.01,
+                       "beat 2 の明示的なテンポ 60 が残る")
+    }
+
+    /// 休符に付いた前打音も鳴る(親が休符でも装飾と同様に処理する)
+    func testGraceNoteBeforeRestSounds() {
+        let s = seq("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC {e}z D |\n")
+        XCTAssertTrue(midi(s).contains(76), "休符に付いた前打音 e5 が鳴る")
+        XCTAssertEqual(midi(s).filter { $0 == 76 }.count, 1)
+    }
+
+    /// トリルの上方隣音は調に沿う(全音とは限らない)
+    func testTrillUsesDiatonicUpperNeighbor() {
+        let cMajor = seq("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nTE4 |\n")
+        XCTAssertTrue(midi(cMajor).contains(65), "C 調では E のトリルの上音は F")
+        XCTAssertFalse(midi(cMajor).contains(66), "C 調では F# は鳴らない")
+        let gMajor = seq("X:1\nT:t\nM:4/4\nL:1/4\nK:G\nTE4 |\n")
+        XCTAssertTrue(midi(gMajor).contains(66), "G 調では E のトリルの上音は F#")
+        XCTAssertFalse(midi(gMajor).contains(65), "G 調では F ナチュラルは鳴らない")
+    }
+
+    /// 本文中の拍子変更が meterMap に集約される(MIDI エクスポート等で使う)
+    func testInlineMeterChangeCollected() {
+        let s = seq("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F | [M:3/4] G A B |]\n")
+        XCTAssertEqual(s.meterMap.map { $0.beat }, [0, 4])
+        guard case .fraction(let n0, let d0) = s.meterMap[0].meter.style,
+              case .fraction(let n1, let d1) = s.meterMap[1].meter.style else {
+            return XCTFail("meterMap が分数拍子を保持していない")
+        }
+        XCTAssertEqual(n0, 4)
+        XCTAssertEqual(d0, 4)
+        XCTAssertEqual(n1, 3)
+        XCTAssertEqual(d1, 4)
+    }
+
+    /// ±7 を超える調号は警告になり、臨時記号は 7 個に丸められる
+    func testKeySignatureBeyondSevenWarns() {
+        let sharp = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:G#\nC |\n")
+        XCTAssertTrue(sharp.diagnostics.contains { $0.severity == .warning },
+                      "G# major (8#) は警告になる")
+        XCTAssertEqual(sharp.tunes[0].voices[0].keySignature.accidentals.count, 7)
+
+        let flat = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:Fb\nC |\n")
+        XCTAssertTrue(flat.diagnostics.contains { $0.severity == .warning },
+                      "Fb major (8b) は警告になる")
+
+        let ok = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC |\n")
+        XCTAssertFalse(ok.diagnostics.contains {
+            $0.severity == .warning && $0.message.contains("臨時記号")
+        }, "通常の調では警告しない")
+    }
+
+    /// 歌詞の音節は休符を飛ばして音符にだけ割り当てられる
+    func testLyricsSkipRests() {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC z D |\nw: a b\n")
+        let ns = notes(t)
+        XCTAssertEqual(ns.count, 3)
+        XCTAssertEqual(ns[0].lyric?.syllable, "a")
+        XCTAssertNil(ns[1].lyric, "休符には歌詞を付けない")
+        XCTAssertEqual(ns[2].lyric?.syllable, "b", "休符は音節を消費しない")
+    }
+
+    /// 音節が音符より多い場合・同じ範囲を繰り返す複数番の w: 行は警告になる
+    func testSurplusLyricsWarn() {
+        let surplus = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D |\nw: a b c\n")
+        XCTAssertTrue(surplus.diagnostics.contains {
+            $0.severity == .warning && $0.message.contains("歌詞")
+        }, "余った音節は警告になる")
+
+        let verses = parse("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D |\nw: a b\nw: c d\n")
+        XCTAssertTrue(verses.diagnostics.contains {
+            $0.severity == .warning && $0.message.contains("歌詞")
+        }, "2番以降の w: 行は未対応として警告になる")
+    }
+
+    /// 空行で曲が切れた後の行は「読み込まれない」エラーになる
+    func testDroppedLineDiagnosed() {
+        let diags = ABCDiagnostics.validate(
+            "X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D |\n\n% コメントは飛ばす\nE F |\n")
+        XCTAssertTrue(diags.contains {
+            $0.severity == .error && $0.line == 9 && $0.message.contains("読み込まれません")
+        })
+        // 新しい X: で始まる次の曲は「読み捨て」ではない
+        let nextTune = ABCDiagnostics.validate(
+            "X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D |\n\nX:2\nT:t2\nK:C\nE F |\n")
+        XCTAssertFalse(nextTune.contains { $0.message.contains("読み込まれません") })
+    }
+
+    /// 3音以上の連続する2度のクラスターでは、外側の符頭は同じ列に揃い、
+    /// 真ん中だけが反対側へずれる(従来は上位2音が同じ側に重なっていた)。
+    /// 上符尾 [CDE] は中央が右へ、下符尾 [fga] は中央が左へ。
+    func testClusterSecondHeadsAlternate() throws {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nK:C\n[CDE] [fga] |]\n")
+        let ns = notes(t)
+        XCTAssertEqual(ns.count, 2)
+        let score = ScoreEngraver.engrave(t, width: 400)
+        for (n, direction) in [(ns[0], 1.0), (ns[1], -1.0)] {
+            let target = try XCTUnwrap(score.targets[n.id])
+            // 符頭は shapeRange の先頭3個に pitch 昇順で並ぶ(後ろは加線等)
+            let heads = target.shapeRange.prefix(3).compactMap { idx -> CGPoint? in
+                guard case .fill(let p, _) = score.shapes[idx] else { return nil }
+                let b = p.boundingBoxOfPath
+                return CGPoint(x: b.midX, y: b.midY)
+            }
+            XCTAssertEqual(heads.count, 3)
+            // y 降順 = 低い音から(画面座標は y-down)
+            let byPitch = heads.sorted { $0.y > $1.y }
+            XCTAssertEqual(byPitch[0].x, byPitch[2].x, accuracy: 0.5,
+                           "外側の2音は同じ列に揃う")
+            XCTAssertGreaterThan((byPitch[1].x - byPitch[0].x) * CGFloat(direction), 2,
+                                 "中央の音だけがずれる")
+        }
+    }
+
+    /// 2音の2度は従来どおり上位音だけがずれる
+    func testTwoNoteSecondHeads() throws {
+        let t = tune("X:1\nT:t\nM:4/4\nL:1/4\nK:C\n[CD] |]\n")
+        let score = ScoreEngraver.engrave(t, width: 400)
+        let n = try XCTUnwrap(notes(t).first)
+        let target = try XCTUnwrap(score.targets[n.id])
+        let heads = target.shapeRange.prefix(2).compactMap { idx -> CGPoint? in
+            guard case .fill(let p, _) = score.shapes[idx] else { return nil }
+            let b = p.boundingBoxOfPath
+            return CGPoint(x: b.midX, y: b.midY)
+        }
+        XCTAssertEqual(heads.count, 2)
+        let byPitch = heads.sorted { $0.y > $1.y }
+        XCTAssertGreaterThan(byPitch[1].x - byPitch[0].x, 2, "上符尾では上位音が右へ")
+    }
+
+    /// MIDI トラック0 に拍子メタイベント(FF 58 04)が入る。途中変更も出す。
+    func testMIDITimeSignatureEvents() {
+        let s = seq("X:1\nT:t\nM:4/4\nL:1/4\nK:C\nC D E F | [M:3/4] G A B |]\n")
+        let data = [UInt8](MIDIWriter.data(for: s, instruments: [:]))
+        let sig44: [UInt8] = [0xFF, 0x58, 0x04, 0x04, 0x02, 24, 8]
+        let sig34: [UInt8] = [0xFF, 0x58, 0x04, 0x03, 0x02, 24, 8]
+        func index(of sig: [UInt8]) -> Int? {
+            guard data.count >= sig.count else { return nil }
+            for i in 0...(data.count - sig.count)
+                where Array(data[i..<i + sig.count]) == sig { return i }
+            return nil
+        }
+        let i44 = index(of: sig44), i34 = index(of: sig34)
+        XCTAssertNotNil(i44, "4/4 の拍子メタイベントがある")
+        XCTAssertNotNil(i34, "途中の 3/4 変更もメタイベントになる")
+        if let i44, let i34 { XCTAssertLessThan(i44, i34, "時系列順に並ぶ") }
+    }
+
+    /// 再生していない時のルート変更では onAutoPause を呼ばない
+    /// (誤って「一時停止」表示になるのを防ぐ)。再生中は呼ばれて一時停止する。
+    func testRouteChangeAutoPauseOnlyWhilePlaying() {
+        var nodes: [RecordingPlayerNode] = []
+        let engine = PlaybackEngine(makePlayerNode: {
+            let node = RecordingPlayerNode()
+            nodes.append(node)
+            return node
+        })
+        let sequence = PlaybackSequence(
+            tracks: [PlaybackTrack(voiceID: "v", name: "v", isPercussion: false,
+                                   events: [PlaybackEvent(elementID: 0, midi: 60,
+                                                          startBeat: 0, durationBeats: 64,
+                                                          velocity: 80)])],
+            tempoMap: [TempoPoint(beat: 0, quarterNoteBPM: 120)],
+            totalBeats: 64)
+        engine.load(sequence, instruments: [:])
+        var autoPauses = 0
+        engine.onAutoPause = { autoPauses += 1 }
+        func postRouteChange() {
+            NotificationCenter.default.post(
+                name: AVAudioSession.routeChangeNotification, object: nil,
+                userInfo: [AVAudioSessionRouteChangeReasonKey:
+                            AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue])
+        }
+        // 停止中: 呼ばれない(オブザーバー未装着なので一度再生して止めてから試す)
+        engine.play()
+        engine.pause()
+        postRouteChange()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(autoPauses, 0, "停止中のルート変更では通知しない")
+
+        // 再生中: 呼ばれて一時停止になる
+        engine.play()
+        XCTAssertTrue(engine.isPlaying)
+        postRouteChange()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(autoPauses, 1, "再生中のルート変更は自動一時停止として通知")
+        XCTAssertFalse(engine.isPlaying)
+        engine.stop()
+    }
+
+    /// 速度はモデル側でも 50–200% にクランプされる(表示値と実再生がずれない)
+    func testSpeedIsClamped() {
+        let model = StudioModel()
+        model.setSpeed(500)
+        XCTAssertEqual(model.speed, 200)
+        model.setSpeed(10)
+        XCTAssertEqual(model.speed, 50)
+        model.setSpeed(120)
+        XCTAssertEqual(model.speed, 120)
+    }
+
+    /// 巨大なファイルのインポートはエラーになる(メインスレッドの重いパースを防ぐ)
+    func testImportFileRejectsOversizedFile() throws {
+        let model = StudioModel()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("huge-\(UUID().uuidString).abc")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 0x63, count: 9 * 1024 * 1024).write(to: url)
+        model.importError = nil
+        model.importFile(url)
+        XCTAssertNotNil(model.importError, "8 MB 超のファイルは拒否される")
+        XCTAssertNil(model.tune, "拒否したファイルで楽譜は更新されない")
     }
 }
 

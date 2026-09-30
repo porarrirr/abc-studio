@@ -432,8 +432,12 @@ struct ContentView: View {
             Picker(voice.name + "の楽器", selection: Binding(
                 get: { model.assignments[voice.id] ?? "piano" },
                 set: { model.assign(voice.id, instrument: $0) })) {
-                ForEach(Instruments.all, id: \.id) { inst in
-                    Text(inst.label).tag(inst.id)
+                ForEach(Instruments.categories, id: \.self) { category in
+                    Section(category) {
+                        ForEach(Instruments.all.filter { $0.category == category }, id: \.id) { inst in
+                            Text(inst.label).tag(inst.id)
+                        }
+                    }
                 }
             }
             .pickerStyle(.menu)
@@ -833,6 +837,10 @@ struct ContentView: View {
                 Text("音声を書き出し中…")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color.ink)
+                Button("キャンセル", role: .cancel) { model.cancelRender() }
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Color.tealDark)
+                    .accessibilityLabel("書き出しをキャンセル")
             }
             .padding(24)
             .background(Color.card)

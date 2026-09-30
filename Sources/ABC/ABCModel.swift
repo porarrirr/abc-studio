@@ -74,13 +74,13 @@ public enum ABCClef: Sendable {
     case treble, bass, alto, tenor, percussion
 
     /// 五線の最下線に相当する diatonic step(C4=0)。step→五線上の段位置変換に使う。
-    /// treble: 最下線=E4(step 2), bass: 最下線=G2(step -19), alto: 中線=C4, tenor: 上から2番目=C4
+    /// treble: E4(2), bass: G2(-10), alto: F3(-4), tenor: D3(-6)
     public var bottomLineStep: Int {
         switch self {
-        case .treble: return 2    // E4
-        case .bass: return -19    // G2
-        case .alto: return -2     // 中線 C4 → 最下線 F3(step -2)
-        case .tenor: return 0     // 上から2番目 C4 → 最下線 D3(step -5)... engraver uses clefSteps
+        case .treble: return 2
+        case .bass: return -10
+        case .alto: return -4
+        case .tenor: return -6
         case .percussion: return 2
         }
     }

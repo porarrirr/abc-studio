@@ -11,7 +11,7 @@ import Foundation
 /// sustained instruments hold a fixed sustain then release.
 ///
 /// Usage:
-///   swift scripts/render_soundfont.swift <path-to-FluidR3_GM.sf2> [SoundFont-dir]
+///   scripts/render_soundfont.sh <path-to-FluidR3_GM.sf2> [SoundFont-dir]
 /// Recommended source (MIT license, see SoundFont/SOUNDFONT-ATTRIBUTION.md):
 ///   https://ftp.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont_3.1.orig.tar.gz
 
@@ -32,16 +32,18 @@ struct Job {
     let cap: Double
 }
 
-let jobs: [Job] = [
-    Job(dir: "acoustic_grand_piano",  program: 0,  percussion: false, sustain: nil,  range: 21...108, cap: 12),
-    Job(dir: "acoustic_guitar_nylon", program: 24, percussion: false, sustain: nil,  range: 21...108, cap: 8),
-    Job(dir: "violin",                program: 40, percussion: false, sustain: 5.0,  range: 21...108, cap: 8),
-    Job(dir: "flute",                 program: 73, percussion: false, sustain: 5.0,  range: 21...108, cap: 8),
-    Job(dir: "trumpet",               program: 56, percussion: false, sustain: 5.0,  range: 21...108, cap: 8),
-    Job(dir: "electric_bass_finger",  program: 33, percussion: false, sustain: nil,  range: 21...108, cap: 8),
-    Job(dir: "choir_aahs",            program: 52, percussion: false, sustain: 5.0,  range: 21...108, cap: 8),
-    Job(dir: "percussion",            program: 0,  percussion: true,  sustain: nil,  range: 27...87,  cap: 6),
-]
+// The app catalog is the sole source of programs and sample directory names.
+let decayingPrograms: Set<Int> = [0, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 24, 25, 32, 33, 34, 35, 45, 46, 47, 105, 114, 115, 116]
+var seenDirectories = Set<String>()
+let jobs: [Job] = Instruments.all.compactMap { instrument in
+    guard seenDirectories.insert(instrument.soundFontDir).inserted else { return nil }
+    return Job(dir: instrument.soundFontDir,
+               program: UInt8(instrument.isDrums ? 0 : instrument.program),
+               percussion: instrument.isDrums,
+               sustain: instrument.isDrums || decayingPrograms.contains(instrument.program) ? nil : 5,
+               range: instrument.isDrums ? 27...87 : 21...108,
+               cap: instrument.program == 0 ? 12 : 8)
+}
 
 // Flat-style note names, matching MIDINoteName in Instruments.swift.
 func noteName(_ midi: Int) -> String {
@@ -75,8 +77,12 @@ guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, chann
 
 let engine = AVAudioEngine()
 let sampler = AVAudioUnitSampler()
+let bassSampler = AVAudioUnitSampler()
+var layeredBass = false
 try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: chunk)
 engine.attach(sampler)
+engine.attach(bassSampler)
+engine.connect(bassSampler, to: engine.mainMixerNode, format: format)
 engine.connect(sampler, to: engine.mainMixerNode, format: format)
 try engine.start()
 
@@ -120,6 +126,7 @@ func renderNote(job: Job, midi: Int) throws -> [Float] {
     while rendered < leadIn { if try !pull() { break } }
 
     sampler.sendMIDIEvent(0x90, data1: UInt8(midi), data2: velocity)
+    if layeredBass { bassSampler.sendMIDIEvent(0x90, data1: UInt8(midi), data2: velocity) }
 
     // Sustain phase.
     let sustainSec = job.sustain ?? .infinity
@@ -136,6 +143,7 @@ func renderNote(job: Job, midi: Int) throws -> [Float] {
 
     if !job.percussion {
         sampler.sendMIDIEvent(0x80, data1: UInt8(midi), data2: 0)
+        if layeredBass { bassSampler.sendMIDIEvent(0x80, data1: UInt8(midi), data2: 0) }
     }
 
     // Release tail: render until quiet or cap.
@@ -176,6 +184,8 @@ func renderNote(job: Job, midi: Int) throws -> [Float] {
     // render a discarded flush so the hard kill lands outside this file.
     sampler.sendMIDIEvent(0xB0, data1: 120, data2: 0)
     sampler.sendMIDIEvent(0xB0, data1: 123, data2: 0)
+    bassSampler.sendMIDIEvent(0xB0, data1: 120, data2: 0)
+    bassSampler.sendMIDIEvent(0xB0, data1: 123, data2: 0)
     var flushed = 0.0
     while flushed < 0.05 {
         try engine.renderOffline(chunk, to: scratch)
@@ -221,7 +231,23 @@ struct WavHeader {
 
 let fm = FileManager.default
 for job in jobs {
-    if let dirFilter, job.dir != dirFilter { continue }
+    if let dirFilter, dirFilter != "missing", job.dir != dirFilter { continue }
+    if dirFilter == "missing" {
+        let dir = outRoot.appendingPathComponent(job.dir)
+        let manifestURL = dir.appendingPathComponent("rendered-notes.json")
+        if let data = try? Data(contentsOf: manifestURL),
+           let manifest = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let requested = manifest["requested"] as? [Int],
+           let audible = manifest["audible"] as? [Int],
+           manifest["program"] as? Int == Int(job.program),
+           requested == Array(job.range), !audible.isEmpty,
+           audible.allSatisfy({ fm.fileExists(atPath: dir.appendingPathComponent(noteName($0) + ".m4a").path) }) { continue }
+        if job.range.allSatisfy({ fm.fileExists(atPath: dir.appendingPathComponent(noteName($0) + ".m4a").path) }) { continue }
+    }
+    layeredBass = job.dir == "cello_contrabass"
+    if layeredBass {
+        try bassSampler.loadSoundBankInstrument(at: sf2URL, program: 43, bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB), bankLSB: 0)
+    }
     let dir = outRoot.appendingPathComponent(job.dir, isDirectory: true)
     try fm.createDirectory(at: dir, withIntermediateDirectories: true)
     let bankMSB: UInt8 = job.percussion
@@ -237,12 +263,21 @@ for job in jobs {
     let range = noteFilter.map { job.range.clamped(to: $0) } ?? job.range
     for midi in range {
         let pcm = try renderNote(job: job, midi: midi)
-        for v in pcm { peak = max(peak, abs(v)) }
+        let notePeak = pcm.reduce(Float(0)) { max($0, abs($1)) }
+        // SF2 key zones may exclude this pitch. Never index a silent file as a usable note.
+        guard notePeak > 0.00001 else {
+            let silentFile = dir.appendingPathComponent(noteName(midi) + ".m4a")
+            if fm.fileExists(atPath: silentFile.path) { try fm.removeItem(at: silentFile) }
+            print("\(job.dir): \(noteName(midi)) outside sounding sample zones; omitted")
+            continue
+        }
+        peak = max(peak, notePeak)
         rendered.append((midi, pcm))
     }
     // Per-instrument normalisation to a common ceiling keeps relative
     // dynamics between notes while giving every instrument the same headroom.
-    let gain: Float = peak > 0 ? min(4.0, 0.82 / peak) : 1
+    guard !rendered.isEmpty else { fatalError("No audible samples for \(job.dir)") }
+    let gain: Float = min(4.0, 0.82 / peak)
     print("\(job.dir): peak \(String(format: "%.3f", peak)) -> gain \(String(format: "%.2f", gain))")
 
     // Pass 2: wav → m4a via afconvert.
@@ -259,8 +294,13 @@ for job in jobs {
         conv.waitUntilExit()
         guard conv.terminationStatus == 0 else {
             FileHandle.standardError.write("afconvert failed for \(dst.path)\n".data(using: .utf8)!)
-            continue
+            exit(1)
         }
+    }
+    if noteFilter == nil {
+        let manifest: [String: Any] = ["program": Int(job.program), "requested": Array(job.range), "audible": rendered.map { $0.midi }]
+        try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+            .write(to: dir.appendingPathComponent("rendered-notes.json"))
     }
     print("\(job.dir): \(rendered.count) notes -> \(dir.path)")
 }

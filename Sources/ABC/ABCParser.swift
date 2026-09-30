@@ -171,7 +171,8 @@ private func parseClef(_ s: String) -> ABCClef? {
 }
 
 /// K: の内容をパース。(調号, K: 内の clef= 属性)
-private func parseKey(_ s: String) -> (key: ABCKeySignature, clef: ABCClef?)? {
+/// clamped: 調号の臨時記号が±7個を超え、描画・再生上の都合で丸めた場合 true
+private func parseKey(_ s: String) -> (key: ABCKeySignature, clef: ABCClef?, clamped: Bool)? {
     let t = s.trimmingCharacters(in: .whitespaces)
     guard !t.isEmpty else { return nil }
     let tokens = t.split(whereSeparator: { $0.isWhitespace }).map(String.init)
@@ -190,7 +191,7 @@ private func parseKey(_ s: String) -> (key: ABCKeySignature, clef: ABCClef?)? {
     let low = head.lowercased()
     if low == "none" || low == "perc" {
         return (ABCKeySignature(display: head, accidentals: [],
-                                isPercussion: perc || low == "perc"), clef)
+                                isPercussion: perc || low == "perc"), clef, false)
     }
     guard let first = head.first, fifthsOf[first] != nil else { return nil }
     var idx = head.index(after: head.startIndex)
@@ -205,6 +206,7 @@ private func parseKey(_ s: String) -> (key: ABCKeySignature, clef: ABCClef?)? {
     guard let off = modeOffset[modeStr] else { return nil }
     let fifths = (fifthsOf[first] ?? 0) + 7 * acc + off
     var accs: [(letter: Int, accidental: ABCAccidental)] = []
+    let clamped = !perc && abs(fifths) > 7
     if !perc {
         if fifths > 0 {
             for i in 0..<min(fifths, 7) { accs.append((letter: sharpOrder[i], accidental: .sharp)) }
@@ -212,7 +214,7 @@ private func parseKey(_ s: String) -> (key: ABCKeySignature, clef: ABCClef?)? {
             for i in 0..<min(-fifths, 7) { accs.append((letter: flatOrder[i], accidental: .flat)) }
         }
     }
-    return (ABCKeySignature(display: head, accidentals: accs, isPercussion: perc), clef)
+    return (ABCKeySignature(display: head, accidentals: accs, isPercussion: perc), clef, clamped)
 }
 
 /// V: 行の name= / clef= 属性
@@ -452,6 +454,9 @@ private final class Engine {
             if let r = parseKey(content) {
                 f.key = r.key
                 if let cl = r.clef { f.keyClef = cl }
+                if r.clamped {
+                    diag(.warning, line.number, 0, "K:（調）の臨時記号が多すぎます。7個を超える分は省略されます")
+                }
             }
         case "V":
             let t = content
@@ -524,6 +529,7 @@ private final class TuneContext {
     var slurWarned = false
     var ampWarned = false
     var pWarned = false
+    var lyricWarned = false
     var nextNoteId = 0
     var lastBodyLine = 0
 
@@ -604,11 +610,14 @@ private final class TuneContext {
             if text.trimmingCharacters(in: .whitespaces).isEmpty { i += 1; continue }
             if text.hasPrefix("K:") {
                 let content = String(stripComment(text).dropFirst(2))
-                if let (k, cl) = parseKey(content) {
+                if let (k, cl, clamped) = parseKey(content) {
                     headerKey = k
                     currentKey = k
                     keyAcc = accMap(k)
                     if let cl = cl { clefFromKey = cl }
+                    if clamped {
+                        report(.warning, line.number, "K:（調）の臨時記号が多すぎます。7個を超える分は省略されます")
+                    }
                 } else {
                     report(.warning, line.number,
                            "K:（調）の値を解釈できません。C として扱います")
@@ -670,7 +679,7 @@ private final class TuneContext {
         if text.hasPrefix("%") { return true }
         guard text.count >= 2 else { return false }
         return text[text.index(after: text.startIndex)] == ":"
-            && text.first!.isASCIILetter
+            && text.first?.isASCIILetter == true
     }
 
     /// チューンヘッダのフィールド行
@@ -799,7 +808,7 @@ private final class TuneContext {
         let content = String(L.chars[2...]).trimmingCharacters(in: .whitespaces)
         switch letter {
         case "w":
-            assignLyrics(ensureVoice(), content)
+            assignLyrics(ensureVoice(), content, line: L.lines[0])
         case "V":
             switchVoice(content)
         case "M", "L", "Q", "K", "P":
@@ -830,7 +839,7 @@ private final class TuneContext {
             if let q = parseTempo(content) { emitField(.tempo(q)) }
             else { report(.warning, line, "Q:（テンポ）の値を解釈できません。直前の値を使います") }
         case "K":
-            if let (k, cl) = parseKey(content) {
+            if let (k, cl, clamped) = parseKey(content) {
                 currentKey = k
                 keyAcc = accMap(k)
                 for vi in voices.indices { voices[vi].measureAccidentals.removeAll() }
@@ -839,6 +848,9 @@ private final class TuneContext {
                     let vi = ensureVoice()
                     voices[vi].clef = cl
                     voices[vi].clefSet = true
+                }
+                if clamped {
+                    report(.warning, line, "K:（調）の臨時記号が多すぎます。7個を超える分は省略されます")
                 }
             } else {
                 report(.warning, line, "K:（調）の値を解釈できません。C として扱います")
@@ -1442,19 +1454,21 @@ private final class TuneContext {
         case syllable(String), bar, skip, extend, hyphen
     }
 
-    func assignLyrics(_ vi: Int, _ content: String) {
+    /// 歌詞の割当で休符は透過的に扱う(音節も `*` も休符を消費しない)
+    func nextSungNote(_ vi: Int, _ from: Int, _ count: Int) -> Int? {
+        var j = from
+        while j < count {
+            if case .note(let nt) = voices[vi].elements[j], !nt.isRest { return j }
+            j += 1
+        }
+        return nil
+    }
+
+    func assignLyrics(_ vi: Int, _ content: String, line: Int) {
         let toks = lyricTokens(content)
         var i = voices[vi].lyricCursor
         let count = voices[vi].elements.count
         var lastAssigned: Int? = nil
-        func nextNote(_ from: Int) -> Int? {
-            var j = from
-            while j < count {
-                if case .note = voices[vi].elements[j] { return j }
-                j += 1
-            }
-            return nil
-        }
         for t in toks {
             switch t {
             case .bar:
@@ -1465,7 +1479,7 @@ private final class TuneContext {
                 }
                 i = j
             case .skip:
-                i = nextNote(i).map { $0 + 1 } ?? count
+                i = nextSungNote(vi, i, count).map { $0 + 1 } ?? count
             case .extend:
                 if let li = lastAssigned, case .note(var nt) = voices[vi].elements[li],
                    nt.lyric != nil {
@@ -1479,16 +1493,16 @@ private final class TuneContext {
                     voices[vi].elements[li] = .note(nt)
                 }
             case .syllable(let s):
-                guard let j = nextNote(i) else { continue }
-                if case .note(var nt) = voices[vi].elements[j] {
-                    if !nt.isRest {
-                        nt.lyric = ABCLyric(syllable: s, hyphenAfter: false,
-                                            underscoreAfter: false)
-                        voices[vi].elements[j] = .note(nt)
-                        lastAssigned = j
-                    }
-                    i = j + 1
+                guard let j = nextSungNote(vi, i, count),
+                      case .note(var nt) = voices[vi].elements[j] else {
+                    warnLyric(line)
+                    continue
                 }
+                nt.lyric = ABCLyric(syllable: s, hyphenAfter: false,
+                                    underscoreAfter: false)
+                voices[vi].elements[j] = .note(nt)
+                lastAssigned = j
+                i = j + 1
             }
         }
         voices[vi].lyricCursor = count
@@ -1529,6 +1543,12 @@ private final class TuneContext {
         guard !ampWarned else { return }
         ampWarned = true
         report(.warning, L.lines[p], "V: の分割(&)は未対応です")
+    }
+    func warnLyric(_ line: Int) {
+        guard !lyricWarned else { return }
+        lyricWarned = true
+        report(.warning, line,
+               "歌詞の音節が余っています。音符より多い w: 行や、同じ範囲を繰り返す複数番の歌詞(連続 w: 行)は割り当てられません")
     }
     func warnP(_ line: Int) {
         guard !pWarned else { return }

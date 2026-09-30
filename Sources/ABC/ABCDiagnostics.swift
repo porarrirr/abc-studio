@@ -113,16 +113,18 @@ public enum ABCDiagnostics {
     }
 
     /// 空行で曲が切れた後に読み捨てられる行の番号(app.js droppedLine)
+    /// 空行以降の最初の実行行(コメント・新しい X: 以外)を 1 パスで返す。
     private static func droppedLine(_ lines: [String]) -> Int {
         var inTune = false
-        for i in 0..<lines.count {
-            if lines[i].hasPrefix("X:") { inTune = true; continue }
-            if !inTune || !lines[i].trimmingCharacters(in: .whitespaces).isEmpty { continue }
-            for j in (i + 1)..<lines.count {
-                if lines[j].trimmingCharacters(in: .whitespaces).isEmpty { continue }
-                if lines[j].hasPrefix("X:") { break }
-                if !lines[j].hasPrefix("%") { return j + 1 }
+        var afterBlank = false
+        for (i, line) in lines.enumerated() {
+            if line.hasPrefix("X:") { inTune = true; afterBlank = false; continue }
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                if inTune { afterBlank = true }
+                continue
             }
+            if line.hasPrefix("%") { continue }
+            if afterBlank { return i + 1 }
         }
         return 0
     }

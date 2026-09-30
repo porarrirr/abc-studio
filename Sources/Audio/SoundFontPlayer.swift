@@ -120,8 +120,12 @@ public final class SoundFontPlayer {
     // MARK: - Directory lookup
 
     /// SoundFont/<dir> inside the bundle resources first, bundle root second.
+    /// dirURLs/missingDirs は makeBuffer が先読みキューからも呼ばれるため lock で保護する。
     private func directoryURL(_ dir: String) -> URL? {
-        if let cached = dirURLs[dir] { return cached }
+        lock.lock()
+        let cached = dirURLs[dir]
+        lock.unlock()
+        if let cached { return cached }
         var found: URL?
         if let resources = Bundle.main.resourceURL {
             let nested = resources.appendingPathComponent("SoundFont", isDirectory: true)
@@ -133,16 +137,22 @@ public final class SoundFontPlayer {
                 if FileManager.default.fileExists(atPath: root.path) { found = root }
             }
         }
+        lock.lock()
         dirURLs[dir] = found
-        if found == nil && !missingDirs.contains(dir) {
-            missingDirs.insert(dir)
+        // insert().inserted で初回のみ(見つからなかった dir を index() 側で二重に鳴らさない)
+        let shouldLog = found == nil && missingDirs.insert(dir).inserted
+        lock.unlock()
+        if shouldLog {
             print("[SoundFontPlayer] soundfont directory not found in bundle: \(dir)")
         }
         return found
     }
 
     private func index(for dir: String) -> DirIndex {
-        if let cached = dirIndex[dir] { return cached }
+        lock.lock()
+        let cached = dirIndex[dir]
+        lock.unlock()
+        if let cached { return cached }
         var result = DirIndex(midis: [], fileNames: [:])
         if let url = directoryURL(dir),
            let files = try? FileManager.default.contentsOfDirectory(atPath: url.path) {
@@ -158,11 +168,13 @@ public final class SoundFontPlayer {
             }
             result.midis = result.fileNames.keys.sorted()
         }
-        if result.midis.isEmpty && !missingDirs.contains(dir) {
-            missingDirs.insert(dir)
+        lock.lock()
+        dirIndex[dir] = result
+        let shouldLog = result.midis.isEmpty && missingDirs.insert(dir).inserted
+        lock.unlock()
+        if shouldLog {
             print("[SoundFontPlayer] no usable sample files in \(dir)")
         }
-        dirIndex[dir] = result
         return result
     }
 

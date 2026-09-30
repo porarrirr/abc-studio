@@ -116,11 +116,18 @@ K:C
         loadABC(abc, filename: UserDefaults.standard.string(forKey: "lastFilename") ?? "", persist: false)
     }
 
+    /// インポートできるファイルサイズの上限(ABC テキストとしては十分大きい)。
+    /// 巨大ファイルをメインスレッドでパースして UI が固まるのを防ぐ。
+    private static let maxImportBytes = 8 * 1024 * 1024
+
     func importFile(_ url: URL) {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         do {
             let data = try Data(contentsOf: url)
+            guard data.count <= Self.maxImportBytes else {
+                throw ImportFailure.tooLarge
+            }
             guard let abc = String(data: data, encoding: .utf8)
                     ?? String(data: data, encoding: .utf16) else {
                 throw ImportFailure.unsupportedEncoding
@@ -198,15 +205,21 @@ K:C
         updateNowPlaying()
     }
 
+    private var assignmentPartNames: [String: String] = [:]
+
     func selectTune(_ index: Int) {
         guard let book, book.tunes.indices.contains(index) else { return }
         selectedTune = index
         let tune = book.tunes[index]
         var next: [String: String] = [:]
         for v in tune.voices {
-            next[v.id] = assignments[v.id] ?? Instruments.guess(forPartName: v.name).id
+            next[v.id] = assignmentPartNames[v.id] == v.name ? assignments[v.id] : nil
+            if next[v.id] == nil {
+                next[v.id] = Instruments.namedInstrument(forPartName: v.name)?.id ?? (v.isPercussion ? "drums" : "piano")
+            }
         }
         assignments = next
+        assignmentPartNames = Dictionary(uniqueKeysWithValues: tune.voices.map { ($0.id, $0.name) })
         rebuildSequence()
         updateNowPlaying()
     }
@@ -302,8 +315,9 @@ K:C
     }
 
     func setSpeed(_ percent: Int) {
-        speed = percent
-        engine.setSpeed(percent)
+        let clamped = min(200, max(50, percent))
+        speed = clamped
+        engine.setSpeed(clamped)
         status = "速度変更済み"
         updateNowPlaying()
     }
@@ -369,7 +383,10 @@ K:C
         shareFile = ShareFile(url: f)
     }
 
-    /// 演奏を WAV 音声としてオフラインレンダリングして共有(非同期)
+    /// 実行中の音声書き出しタスク(キャンセル用)
+    private var renderTask: Task<Void, Never>?
+
+    /// 演奏を WAV 音声としてオフラインレンダリングして共有(非同期・キャンセル可能)
     func shareAudio() {
         guard let seq = sequence else { toast("楽譜を読み込んでください"); return }
         isRendering = true
@@ -379,7 +396,7 @@ K:C
         let volume = Float(masterVolume)
         let percent = speed
         let name = exportName("wav")
-        Task.detached(priority: .userInitiated) { [weak self] in
+        renderTask = Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let url = try AudioExporter.render(sequence: seq,
                                                    instruments: instruments,
@@ -395,11 +412,24 @@ K:C
             } catch {
                 await MainActor.run {
                     self?.isRendering = false
-                    self?.status = "書き出し失敗"
-                    self?.toast(error.localizedDescription)
+                    if error is AudioExporter.RenderError,
+                       (error as? AudioExporter.RenderError) == .cancelled {
+                        self?.status = "書き出しをキャンセルしました"
+                    } else {
+                        self?.status = "書き出し失敗"
+                        self?.toast(error.localizedDescription)
+                    }
                 }
             }
         }
+    }
+
+    /// 実行中の音声書き出しを中断する(途中まで書かれたファイルは残さない)
+    func cancelRender() {
+        renderTask?.cancel()
+        renderTask = nil
+        isRendering = false
+        status = "書き出しをキャンセルしました"
     }
 
     // MARK: - ライブラリ
@@ -591,6 +621,14 @@ K:C
 
     private enum ImportFailure: LocalizedError {
         case unsupportedEncoding
-        var errorDescription: String? { "この ABC ファイルの文字コードを読み込めません。UTF-8 または UTF-16 で保存してください。" }
+        case tooLarge
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedEncoding:
+                return "この ABC ファイルの文字コードを読み込めません。UTF-8 または UTF-16 で保存してください。"
+            case .tooLarge:
+                return "このファイルは大きすぎます(8 MB まで)。ABC テキストとして読み込める範囲を確認してください。"
+            }
+        }
     }
 }

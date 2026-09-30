@@ -9,11 +9,13 @@ public enum AudioExporter {
         case empty
         case tooLong
         case renderFailed
+        case cancelled
         public var errorDescription: String? {
             switch self {
             case .empty: return "書き出す音がありません"
             case .tooLong: return "曲が長すぎて書き出せません"
             case .renderFailed: return "音声のレンダリングに失敗しました"
+            case .cancelled: return "書き出しをキャンセルしました"
             }
         }
     }
@@ -85,6 +87,7 @@ public enum AudioExporter {
         for node in nodes { node.play() }
 
         // 全イベントを絶対サンプル時刻でスケジュール(先読み不要、一括でよい)
+        // makeBuffer がイベントごとに走るのでキャンセルもここで拾う。
         let leadIn = 0.05
         for (index, track) in sequence.tracks.enumerated() {
             let instrument = instruments[track.voiceID]
@@ -92,11 +95,15 @@ public enum AudioExporter {
                     ? (Instruments.byID("drums") ?? Instruments.all[0])
                     : Instruments.all[0])
             for event in track.events {
+                if Task.isCancelled {
+                    engine.stop()
+                    throw RenderError.cancelled
+                }
                 let offsetSec = sequence.seconds(forBeat: event.startBeat) / rate + leadIn
                 let eventSec = (sequence.seconds(forBeat: event.startBeat + event.durationBeats)
                                 - sequence.seconds(forBeat: event.startBeat)) / rate
                 guard let buffer = font.makeBuffer(dir: instrument.soundFontDir,
-                                                   midi: event.midi,
+                                                   midi: instrument.soundingNote(event.midi),
                                                    seconds: eventSec,
                                                    velocity: event.velocity) else {
                     continue
@@ -119,6 +126,11 @@ public enum AudioExporter {
         else { throw RenderError.renderFailed }
         var written: AVAudioFrameCount = 0
         while written < totalFrames {
+            if Task.isCancelled {
+                engine.stop()
+                try? FileManager.default.removeItem(at: url)   // 中途半端なファイルを残さない
+                throw RenderError.cancelled
+            }
             let want = min(8192, totalFrames - written)
             do {
                 try engine.renderOffline(want, to: buffer)

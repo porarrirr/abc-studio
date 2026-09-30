@@ -6,7 +6,7 @@ ABC 記譜法のファイルを読み込み、楽譜を表示して再生する 
 
 - `.abc` / `.txt` の読み込み、複数曲が入ったファイルの曲選択、ABC テキストの編集、最後に開いた楽譜の復元
 - Files やメールなど他アプリからの「このアプリで開く」(`.abc` 独自 UTI 登録)、クリップボードからの読み込み、アプリ内サンプル(`Samples/`)
-- ピアノ、ギター、バイオリン、フルート、トランペット、ベース、ドラム、合唱の音色
+- オーケストラ・ジャズ・現代クラシック向けの78種類の楽器割り当て（[対応一覧と音色の範囲](docs/instruments.md)）
 - `V:` で定義した複数パートへの個別の楽器割り当てと同時再生
 - パートごとのミュート・ソロ、マスター音量
 - 再生・一時停止・停止・シーク・ループ・速度変更（50–200%、スライダー）
@@ -46,6 +46,6 @@ Xcode で `ABCStudio.xcodeproj` を開いてビルドします。プロジェク
 
 ABC の解析・診断・譜面描画・再生はすべて Swift / SwiftUI / CoreGraphics / AVAudioEngine で実装したネイティブコードで、WebView や JavaScript は使用していません。オフラインの音色は FluidR3_GM サウンドフォント(MIT)から AVAudioUnitSampler でノートごとにレンダリングした AAC サンプルで、サウンドフォント本来のベロシティ応答・サステイン・自然減衰を含みます。譜面記号は Steinberg の Bravura フォント(SIL Open Font License 1.1、`Sources/Fonts/Bravura-OFL.txt`)を同梱して描画します。音色のライセンスと帰属表示は `SoundFont/SOUNDFONT-ATTRIBUTION.md`、アプリ内では右上メニューの「このアプリについて」を参照してください。
 
-音色を再生成するには `FluidR3_GM.sf2` を用意して `swift scripts/render_soundfont.swift <sf2のパス>` を実行します。
+音色を再生成するには `FluidR3_GM.sf2` を用意して `scripts/render_soundfont.sh <sf2のパス>` を実行します。
 
 アプリ本体のソースコードは `LICENSE` のとおり All rights reserved です。音色サンプルは引き続き Fluid (R3) の MIT License の条件に従います。

@@ -326,17 +326,7 @@ private final class Engine {
 
     private static func voiceLabel(_ v: ABCVoice) -> String { v.name.isEmpty ? v.id : v.name }
 
-    // MARK: clef tables (diatonic bottom-line step, C4 = 0)
-
-    private func bottomStep(_ clef: ABCClef) -> Int {
-        switch clef {
-        case .treble: return 2      // E4
-        case .bass: return -10      // G2
-        case .alto: return -4       // F3
-        case .tenor: return -6      // D3
-        case .percussion: return 2
-        }
-    }
+    // MARK: clef tables (diatonic bottom-line step, C4 = 0) — ABCClef.bottomLineStep 参照
 
     private func clefWidth(_ clef: ABCClef) -> CGFloat {
         switch clef {
@@ -995,7 +985,7 @@ private final class Engine {
         accMap = [:]
 
         let perc = voice.isPercussion
-        let bottom = bottomStep(voice.clef)
+        let bottom = voice.clef.bottomLineStep
 
         // ---- pass 1: positions ----
         // 全パート共通の時間グリッドから各発音位置の x を決める。
@@ -1120,14 +1110,23 @@ private final class Engine {
                 let maxP = heads.map { $0.p }.max() ?? 4
                 let minP = heads.map { $0.p }.min() ?? 4
                 let stemUp = (4 - minP) >= (maxP - 4)
-                // seconds offset: the higher note of a second stays on the stem side
+                // seconds offset: 隣接する2度は交互に左右へずらす。
+                // 上符尾: 通常側=左、ずらした側=右(上位音から上へ向かって交互)。
+                // 下符尾: 通常側=右、ずらした側=左(上位音から下へ向かって交互)。
+                // 3音以上の連続する2度でも同じ列に隣接符頭が並ばないようにする。
                 for hi in 0..<heads.count { heads[hi].x = headX }
-                for hi in 1..<heads.count where heads[hi].p - heads[hi - 1].p == 1 {
-                    if stemUp { heads[hi].x = headX + headW - stemW }
-                    else { heads[hi - 1].x = headX - headW + stemW }
+                if stemUp {
+                    for hi in 1..<heads.count where heads[hi].p - heads[hi - 1].p == 1 {
+                        heads[hi].x = heads[hi - 1].x == headX ? headX + headW - stemW : headX
+                    }
+                } else {
+                    for hi in stride(from: heads.count - 2, through: 0, by: -1)
+                        where heads[hi + 1].p - heads[hi].p == 1 {
+                        heads[hi].x = heads[hi + 1].x == headX ? headX - headW + stemW : headX
+                    }
                 }
                 // accidentals: stacked right-to-left from the head's left edge
-                let headLeft = heads.map { $0.x }.min()! - headW / 2
+                let headLeft = (heads.map { $0.x }.min() ?? headX) - headW / 2
                 for ai in accs.indices {
                     accs[ai].x = headLeft - s * 0.2 - CGFloat(ai % 2) * s * 1.0
                 }
@@ -1167,16 +1166,17 @@ private final class Engine {
                 pn.note.isRest ? pn.restCenterX
                     : (stemUp ? pn.x + headW / 2 - stemW / 2 : pn.x - headW / 2 + stemW / 2)
             }
-            let fx = stemX(pairs.first!.1)
-            let lx = stemX(pairs.last!.1)
+            guard let firstPair = pairs.first, let lastPair = pairs.last else { continue }
+            let fx = stemX(firstPair.1)
+            let lx = stemX(lastPair.1)
             guard lx > fx else { continue }
             func reqTip(_ pn: PlacedNote) -> CGFloat {
                 stemUp ? min(pn.botCy - s * 3.0, pn.topCy - s * 2.5)
                        : max(pn.topCy + s * 3.0, pn.botCy + s * 2.5)
             }
-            let first = notes.first!.1, last = notes.last!.1
-            let firstRef = stemUp ? first.topCy : first.botCy
-            let lastRef = stemUp ? last.topCy : last.botCy
+            guard let firstNote = notes.first, let lastNote = notes.last else { continue }
+            let firstRef = stemUp ? firstNote.1.topCy : firstNote.1.botCy
+            let lastRef = stemUp ? lastNote.1.topCy : lastNote.1.botCy
             var slope = (lastRef - firstRef) * 0.25
             slope = max(-s * 0.5, min(s * 0.5, slope))
             // 中間の音が両端より外側にある(凹形)ときは水平に
@@ -1197,8 +1197,7 @@ private final class Engine {
             else { beamAtFirst = max(beamAtFirst, s * 2 - min(0, slope)) }
             beamGeo[bi] = BeamGeo(yAtX0: beamAtFirst, yAtX1: beamAtFirst + slope,
                                   x0: fx, x1: lx, stemUp: stemUp)
-            for (m, _) in pairs {
-                var pn = placed[m]!
+            for (m, var pn) in pairs {
                 pn.stemX = stemX(pn)
                 pn.tipY = beamAtFirst + slope * (pn.stemX - fx) / (lx - fx)
                 pn.stemUp = stemUp
@@ -1223,8 +1222,11 @@ private final class Engine {
             }
 
             if !n.graceNotes.isEmpty {
-                let firstHead = pn.heads.map { $0.x }.min()! - headW / 2
-                let accLeft = (accMap[idx] ?? []).isEmpty ? firstHead : firstHead - CGFloat(min(2, accMap[idx]!.count)) * s * 0.95 - s * 0.2
+                let firstHead = (pn.heads.map { $0.x }.min() ?? pn.x) - headW / 2
+                let accCount = accMap[idx]?.count ?? 0
+                let accLeft = accCount == 0
+                    ? firstHead
+                    : firstHead - CGFloat(min(2, accCount)) * s * 0.95 - s * 0.2
                 emitGrace(n.graceNotes, rightX: accLeft - s * 0.2, bottom: bottom, perc: perc)
             }
 
@@ -1274,7 +1276,7 @@ private final class Engine {
             }
             // augmentation dots
             if n.dots > 0 {
-                let rightX = pn.heads.map { $0.x }.max()! + headW / 2 + s * 0.35
+                let rightX = (pn.heads.map { $0.x }.max() ?? pn.x) + headW / 2 + s * 0.35
                     + (pn.stemUp && beamed == false && n.glyph.flagCount > 0 ? s * 0.6 : 0)
                 var used = Set<Int>()
                 for h in pn.heads {
@@ -1323,13 +1325,17 @@ private final class Engine {
                 var runStart: Int? = nil
                 let off = CGFloat(lvl - 1) * s * 0.75 * dir
                 for (k, itemIdx) in members.enumerated() {
-                    let pn = placed[itemIdx]!
+                    guard let pn = placed[itemIdx] else { continue }
                     let needs = !pn.note.isRest && pn.note.glyph.flagCount >= lvl
                     if needs && runStart == nil { runStart = k }
                     if (!needs || k == members.count - 1), let rs = runStart {
                         let re = needs ? k : k - 1
-                        var sx0 = placed[members[rs]]!.stemX - stemW / 2
-                        var sx1 = placed[members[re]]!.stemX + stemW / 2
+                        guard let sp0 = placed[members[rs]], let sp1 = placed[members[re]] else {
+                            runStart = nil
+                            continue
+                        }
+                        var sx0 = sp0.stemX - stemW / 2
+                        var sx1 = sp1.stemX + stemW / 2
                         if rs == re {
                             // 単独: 前の音があれば左へ、なければ右へ短いビーム
                             if rs > 0 { sx0 = sx1 - s * 1.1 } else { sx1 = sx0 + s * 1.1 }
@@ -1358,8 +1364,10 @@ private final class Engine {
             }
             ties[vi] = remaining
             if n.tieStart {
+                let maxStep = pn.heads.map { $0.p }.max() ?? 0
+                let minStep = pn.heads.map { $0.p }.min() ?? 0
                 for h in pn.heads {
-                    let above = pn.heads.count > 1 ? h.p >= (pn.heads.map { $0.p }.max()! + pn.heads.map { $0.p }.min()!) / 2 + 1 : !pn.stemUp
+                    let above = pn.heads.count > 1 ? h.p >= (maxStep + minStep) / 2 + 1 : !pn.stemUp
                     ties[vi].append(TiePend(step: h.p, x: h.x + headW * 0.6,
                                             cy: h.cy + (above ? -s * 0.35 : s * 0.35), above: above))
                 }
@@ -1480,10 +1488,10 @@ private final class Engine {
             shapes.append(.fill(sp, .primary))
             gx += step
         }
-        if stems.count >= 2 {
-            let y0 = stems.map { $0.top }.min()!
+        if stems.count >= 2, let firstStem = stems.first, let lastStem = stems.last,
+           let y0 = stems.map({ $0.top }).min() {
             let p = CGMutablePath()
-            p.addRect(CGRect(x: stems.first!.x - 0.4, y: y0, width: stems.last!.x - stems.first!.x + 0.8, height: s * 0.35))
+            p.addRect(CGRect(x: firstStem.x - 0.4, y: y0, width: lastStem.x - firstStem.x + 0.8, height: s * 0.35))
             shapes.append(.fill(p, .primary))
             for st in stems where st.top > y0 {
                 let e = CGMutablePath()
