@@ -136,6 +136,60 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertNil(model.shareFile)
     }
 
+    func testPartVolumesAreIndependentAndClamped() {
+        let model = StudioModel()
+        model.loadABC("""
+        X:1
+        T:volume test
+        M:4/4
+        L:1/4
+        V:melody name="Violin"
+        V:bass clef=bass name="Bass"
+        K:C
+        [V:melody] C |
+        [V:bass] C, |
+        """, filename: "volume.abc", persist: false)
+
+        XCTAssertEqual(model.partVolume(for: "melody"), 1, accuracy: 0.0001)
+        XCTAssertEqual(model.partVolume(for: "bass"), 1, accuracy: 0.0001)
+
+        model.setPartVolume("melody", volume: 0.25)
+        XCTAssertEqual(model.partVolume(for: "melody"), 0.25, accuracy: 0.0001)
+        XCTAssertEqual(model.partVolume(for: "bass"), 1, accuracy: 0.0001)
+
+        model.setPartVolume("melody", volume: -0.5)
+        XCTAssertEqual(model.partVolume(for: "melody"), 0, accuracy: 0.0001)
+        model.setPartVolume("bass", volume: 1.5)
+        XCTAssertEqual(model.partVolume(for: "bass"), 1, accuracy: 0.0001)
+        model.setPartVolume("bass", volume: .nan)
+        XCTAssertEqual(model.partVolume(for: "bass"), 1, accuracy: 0.0001)
+    }
+
+    func testTrackGainsApplyImmediatelyAndClamp() {
+        var nodes: [RecordingPlayerNode] = []
+        let engine = PlaybackEngine(makePlayerNode: {
+            let node = RecordingPlayerNode()
+            nodes.append(node)
+            return node
+        })
+        let tracks = [
+            PlaybackTrack(voiceID: "melody", name: "Violin", isPercussion: false,
+                          events: []),
+            PlaybackTrack(voiceID: "bass", name: "Bass", isPercussion: false,
+                          events: [])
+        ]
+        engine.load(PlaybackSequence(tracks: tracks,
+                                     tempoMap: [TempoPoint(beat: 0, quarterNoteBPM: 120)],
+                                     totalBeats: 1), instruments: [:])
+        defer { engine.stop() }
+
+        engine.setTrackGains(["melody": 0.25, "bass": 1.5])
+        XCTAssertEqual(nodes[0].volume, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(nodes[1].volume, 1, accuracy: 0.0001)
+        engine.setTrackGains(["melody": -1])
+        XCTAssertEqual(nodes[0].volume, 0, accuracy: 0.0001)
+    }
+
     func testSpeedChangePreservesPlaybackPosition() {
         let engine = PlaybackEngine()
         let sequence = PlaybackSequence(tracks: [],

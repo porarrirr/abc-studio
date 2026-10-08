@@ -31,7 +31,7 @@ public final class PlaybackEngine: ObservableObject {
     private var playerNodes: [AVAudioPlayerNode] = []
     private var sequence: PlaybackSequence?
     private var trackInstruments: [Instrument] = []
-    /// voiceID → 0.0...1.0 (ミュート/ソロ反映済み)
+    /// voiceID → 0.0...1.0 (パート音量とミュート/ソロ反映済み)
     private var trackGains: [String: Float] = [:]
     private let soundFont = SoundFontPlayer()
     /// Shared ambience: playerNodes → auxMixer → reverb → limiter → mainMixer.
@@ -206,7 +206,7 @@ public final class PlaybackEngine: ObservableObject {
 
     // MARK: - Volume
 
-    /// voiceID → 0...1。ミュート/ソロは呼び出し側で計算して渡す。
+    /// voiceID → 0...1。パート音量とミュート/ソロを反映した値を受け取る。
     public func setTrackGains(_ gains: [String: Float]) {
         trackGains = gains
         applyTrackGains()
@@ -215,7 +215,8 @@ public final class PlaybackEngine: ObservableObject {
     private func applyTrackGains() {
         guard let seq = sequence else { return }
         for (i, track) in seq.tracks.enumerated() where i < playerNodes.count {
-            playerNodes[i].volume = trackGains[track.voiceID] ?? 1
+            let gain = trackGains[track.voiceID] ?? 1
+            playerNodes[i].volume = gain.isFinite ? min(1, max(0, gain)) : 1
         }
     }
 

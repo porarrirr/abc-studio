@@ -50,7 +50,7 @@
 		096526D529D1B1DA38555B2E /* ABCBeaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCBeaming.swift; sourceTree = "<group>"; };
 		1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCDiagnostics.swift; sourceTree = "<group>"; };
 		502BB13B0AE1B8EE0BBA7165 /* MIDIWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIWriter.swift; sourceTree = "<group>"; };
-		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Bravura-OFL.txt"; sourceTree = "<group>"; };
 		5809CEC823FC7895ADE3035D /* ScoreExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreExporter.swift; sourceTree = "<group>"; };
 		5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Bravura.otf; sourceTree = "<group>"; };
@@ -355,6 +355,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 77V64TWCFD;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -567,6 +568,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 77V64TWCFD;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

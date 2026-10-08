@@ -32,6 +32,8 @@ final class StudioModel: ObservableObject {
     @Published var mutedVoices: Set<String> = []
     /// ソロ再生中の声部(nil = なし)
     @Published var soloVoiceID: String?
+    /// voiceID → パート音量 0...1
+    @Published var partVolumes: [String: Double] = [:]
     /// マスター音量 0...1
     @Published var masterVolume: Double = 1
     /// 曲全体のループ再生
@@ -187,6 +189,10 @@ K:C
             engine.unload()
             selectedTune = 0
             assignments = [:]
+            partVolumes = [:]
+            partVolumeNames = [:]
+            mutedVoices = []
+            soloVoiceID = nil
             shareFile = nil
             status = "読み込みエラー"
             toast(diagnostics.first(where: { $0.severity == .error })?.message ?? "ABC を確認してください")
@@ -206,20 +212,32 @@ K:C
     }
 
     private var assignmentPartNames: [String: String] = [:]
+    /// パート音量を同じ ID・名前の声部へ引き継ぐための対応表。
+    private var partVolumeNames: [String: String] = [:]
 
     func selectTune(_ index: Int) {
         guard let book, book.tunes.indices.contains(index) else { return }
         selectedTune = index
         let tune = book.tunes[index]
         var next: [String: String] = [:]
+        var nextVolumes: [String: Double] = [:]
         for v in tune.voices {
             next[v.id] = assignmentPartNames[v.id] == v.name ? assignments[v.id] : nil
             if next[v.id] == nil {
                 next[v.id] = Instruments.namedInstrument(forPartName: v.name)?.id ?? (v.isPercussion ? "drums" : "piano")
             }
+            let volume = partVolumeNames[v.id] == v.name ? partVolumes[v.id] : nil
+            nextVolumes[v.id] = Self.clampVolume(volume ?? 1)
         }
         assignments = next
+        partVolumes = nextVolumes
         assignmentPartNames = Dictionary(uniqueKeysWithValues: tune.voices.map { ($0.id, $0.name) })
+        partVolumeNames = Dictionary(uniqueKeysWithValues: tune.voices.map { ($0.id, $0.name) })
+        let voiceIDs = Set(nextVolumes.keys)
+        mutedVoices.formIntersection(voiceIDs)
+        if let soloVoiceID, !voiceIDs.contains(soloVoiceID) {
+            self.soloVoiceID = nil
+        }
         rebuildSequence()
         updateNowPlaying()
     }
@@ -249,14 +267,24 @@ K:C
         toast("次の再生から音色を変更します")
     }
 
-    /// 声部ごとの実効音量(ソロ優先、なければミュート反映)
+    /// 声部ごとの実効音量(パート音量にソロ・ミュートを反映)
     private func trackGains() -> [String: Float] {
         var gains: [String: Float] = [:]
         for v in tune?.voices ?? [] {
             let audible = soloVoiceID != nil ? v.id == soloVoiceID : !mutedVoices.contains(v.id)
-            gains[v.id] = audible ? 1 : 0
+            gains[v.id] = audible ? Float(Self.clampVolume(partVolumes[v.id] ?? 1)) : 0
         }
         return gains
+    }
+
+    private static func clampVolume(_ volume: Double) -> Double {
+        guard volume.isFinite else { return 1 }
+        return min(1, max(0, volume))
+    }
+
+    /// 声部の現在の音量。未設定の声部は 100% とする。
+    func partVolume(for voiceID: String) -> Double {
+        Self.clampVolume(partVolumes[voiceID] ?? 1)
     }
 
     private func applyGains() {
@@ -277,9 +305,18 @@ K:C
         applyGains()
     }
 
+    /// 声部の音量を 0...1 に収め、再生中のノードにも即時反映する。
+    func setPartVolume(_ voiceID: String, volume: Double) {
+        var next = partVolumes
+        next[voiceID] = Self.clampVolume(volume)
+        partVolumes = next
+        applyGains()
+    }
+
     func setMasterVolume(_ volume: Double) {
-        masterVolume = volume
-        engine.setMasterVolume(Float(volume))
+        let clamped = Self.clampVolume(volume)
+        masterVolume = clamped
+        engine.setMasterVolume(Float(clamped))
     }
 
     func togglePlay() {

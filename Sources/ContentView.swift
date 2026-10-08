@@ -329,12 +329,12 @@ struct ContentView: View {
                             .font(.system(size: 10, weight: .heavy))
                             .tracking(1.8)
                             .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-                        Text("パートごとの音色")
+                        Text("パートごとの音量・音色")
                             .font(.system(size: 21, weight: .semibold))
                             .foregroundStyle(Color.ink)
                     }
                     Spacer()
-                    Text("声部ごとに楽器を選べます。変更は次の再生から反映されます。")
+                    Text("音量は再生中にも変更できます。楽器の変更は次の再生から反映されます。")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.sub)
                         .frame(maxWidth: 330, alignment: .trailing)
@@ -391,62 +391,92 @@ struct ContentView: View {
         let instrument = Instruments.byID(model.assignments[voice.id] ?? "") ?? Instruments.all[0]
         let muted = model.mutedVoices.contains(voice.id)
         let soloed = model.soloVoiceID == voice.id
-        return HStack {
-            HStack(spacing: 12) {
-                Text(instrument.icon)
-                    .font(.system(size: 18))
-                    .foregroundStyle(Color.tealDark)
-                    .frame(width: 37, height: 37)
-                    .background(Color(red: 0.910, green: 0.949, blue: 0.925))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(voice.name)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Color.ink)
-                    Text("パート \(index + 1)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.faint)
+        let volume = model.partVolume(for: voice.id)
+        let volumePercent = Int((volume * 100).rounded())
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                HStack(spacing: 12) {
+                    Text(instrument.icon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.tealDark)
+                        .frame(width: 37, height: 37)
+                        .background(Color(red: 0.910, green: 0.949, blue: 0.925))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(voice.name)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(Color.ink)
+                        Text("パート \(index + 1)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.faint)
+                    }
                 }
+                .opacity(muted ? 0.45 : 1)
+                Spacer(minLength: 6)
+                Button { model.toggleSolo(voice.id) } label: {
+                    Text("S")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(soloed ? .white : Color.sub)
+                        .frame(width: 26, height: 26)
+                        .background(soloed ? Color.amber : Color(red: 0.937, green: 0.953, blue: 0.941))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel(voice.name + "をソロ再生")
+                Button { model.toggleMute(voice.id) } label: {
+                    Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(muted ? .white : Color.sub)
+                        .frame(width: 26, height: 26)
+                        .background(muted ? Color(red: 0.643, green: 0.220, blue: 0.165)
+                                          : Color(red: 0.937, green: 0.953, blue: 0.941))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel(voice.name + "をミュート")
             }
-            .opacity(muted ? 0.45 : 1)
-            Spacer()
-            Button { model.toggleSolo(voice.id) } label: {
-                Text("S")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(soloed ? .white : Color.sub)
-                    .frame(width: 26, height: 26)
-                    .background(soloed ? Color.amber : Color(red: 0.937, green: 0.953, blue: 0.941))
-                    .clipShape(Circle())
-            }
-            .accessibilityLabel(voice.name + "をソロ再生")
-            Button { model.toggleMute(voice.id) } label: {
-                Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+
+            HStack(spacing: 9) {
+                Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(.system(size: 12))
-                    .foregroundStyle(muted ? .white : Color.sub)
-                    .frame(width: 26, height: 26)
-                    .background(muted ? Color(red: 0.643, green: 0.220, blue: 0.165)
-                                      : Color(red: 0.937, green: 0.953, blue: 0.941))
-                    .clipShape(Circle())
+                    .foregroundStyle(Color.tealDark)
+                    .frame(width: 20)
+                Slider(value: Binding(
+                    get: { model.partVolume(for: voice.id) },
+                    set: { model.setPartVolume(voice.id, volume: $0) }), in: 0...1)
+                    .tint(Color.teal)
+                    .accessibilityLabel(voice.name + "の音量")
+                    .accessibilityValue("\(volumePercent)%")
+                    .accessibilityIdentifier("part-volume-\(voice.id)")
+                Text("\(volumePercent)%")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.sub)
+                    .frame(width: 42, alignment: .trailing)
+                    .accessibilityHidden(true)
             }
-            .accessibilityLabel(voice.name + "をミュート")
-            Picker(voice.name + "の楽器", selection: Binding(
-                get: { model.assignments[voice.id] ?? "piano" },
-                set: { model.assign(voice.id, instrument: $0) })) {
-                ForEach(Instruments.categories, id: \.self) { category in
-                    Section(category) {
-                        ForEach(Instruments.all.filter { $0.category == category }, id: \.id) { inst in
-                            Text(inst.label).tag(inst.id)
+
+            HStack(spacing: 8) {
+                Text("楽器")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.faint)
+                Spacer()
+                Picker(voice.name + "の楽器", selection: Binding(
+                    get: { model.assignments[voice.id] ?? "piano" },
+                    set: { model.assign(voice.id, instrument: $0) })) {
+                    ForEach(Instruments.categories, id: \.self) { category in
+                        Section(category) {
+                            ForEach(Instruments.all.filter { $0.category == category }, id: \.id) { inst in
+                                Text(inst.label).tag(inst.id)
+                            }
                         }
                     }
                 }
+                .pickerStyle(.menu)
+                .font(.system(size: 13, weight: .bold))
+                .tint(Color(red: 0.133, green: 0.310, blue: 0.294))
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(red: 0.796, green: 0.863, blue: 0.831)))
             }
-            .pickerStyle(.menu)
-            .font(.system(size: 13, weight: .bold))
-            .tint(Color(red: 0.133, green: 0.310, blue: 0.294))
-            .padding(.horizontal, 8).padding(.vertical, 6)
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(red: 0.796, green: 0.863, blue: 0.831)))
         }
         .padding(12)
         .background(Color(red: 0.988, green: 0.992, blue: 0.980))

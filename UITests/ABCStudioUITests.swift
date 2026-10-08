@@ -98,6 +98,30 @@ final class ABCStudioUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["停止"].waitForExistence(timeout: 3))
     }
 
+    /// 楽器タブの各パートに独立した音量スライダーがあり、変更した値が表示される。
+    func testEachPartHasIndependentVolumeSlider() throws {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["楽器"].tap()
+
+        let melody = app.sliders["part-volume-melody"]
+        let harmony = app.sliders["part-volume-harmony"]
+        let bass = app.sliders["part-volume-bass"]
+        XCTAssertTrue(melody.waitForExistence(timeout: 3))
+        XCTAssertTrue(harmony.exists)
+        XCTAssertTrue(bass.exists)
+        XCTAssertEqual(melody.label, "Violinの音量")
+        XCTAssertTrue(String(describing: melody.value).contains("100"))
+        XCTAssertTrue(String(describing: harmony.value).contains("100"))
+        XCTAssertTrue(String(describing: bass.value).contains("100"))
+
+        melody.adjust(toNormalizedSliderPosition: 0.25)
+        XCTAssertTrue(String(describing: melody.value).contains("25"),
+                      "変更したパートだけ音量表示が変わる")
+        XCTAssertTrue(String(describing: harmony.value).contains("100"))
+        XCTAssertTrue(String(describing: bass.value).contains("100"))
+        saveScreenshot("parts-volume")
+    }
+
     /// 自動追従: 長い曲を再生すると譜面が段ごとに送られ、指でスクロールすると
     /// 一時停止して「再生位置へ戻る」が出て、押すと追従が再開すること。
     func testFollowScrollsDuringPlayback() throws {

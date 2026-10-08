@@ -72,7 +72,8 @@ public enum AudioExporter {
             let node = AVAudioPlayerNode()
             engine.attach(node)
             engine.connect(node, to: auxMixer, format: format)
-            node.volume = trackGains[track.voiceID] ?? 1
+            let gain = trackGains[track.voiceID] ?? 1
+            node.volume = gain.isFinite ? min(1, max(0, gain)) : 1
             nodes.append(node)
         }
         for (index, track) in sequence.tracks.enumerated() {
