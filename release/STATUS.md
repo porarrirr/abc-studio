@@ -32,12 +32,14 @@ Updated: 2026-10-09 (Asia/Tokyo).
 
 - Review has **not** been submitted; App Store release has **not** occurred.
 - Browser screenshot upload was denied, then browser access itself was denied.
-  The owner explicitly reauthorized access and two-image upload in chat, but the
-  browser still reported a saved permission preference blocking appstoreconnect.apple.com.
+  The owner explicitly reauthorized access and two-image upload in chat, then
+  authorized proceeding without further questions. A fresh ordinary browser
+  attempt still reported a saved permission preference blocking appstoreconnect.apple.com.
   No alternate browser/API path was used to bypass the blocked action.
 - Owner must clear that saved browser permission block to resume Apple-side work.
 - Reviewer contact phone number (with country code) is still required. It is not stored in this public repository.
-- Confirm price (free proposed), complete category/subtitle, content-rights and age-rating settings,
+- Price assumption: free, based on the owner's request to proceed without further questions.
+- Complete category/subtitle, content-rights and age-rating settings,
   publish the app privacy declaration, upload screenshots, select the processed build and submit review.
 - Build 2 distribution export succeeded: local `output/release/build2-export/ABCStudio.ipa` (ignored). Build 2 is not uploaded.
 
