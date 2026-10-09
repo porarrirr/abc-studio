@@ -46,7 +46,7 @@ final class ABCStudioUITests: XCTestCase {
 
         // 例題が読み込まれ譜面タブが表示される
         XCTAssertTrue(app.staticTexts["SCORE"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["楽器"].exists)
+        XCTAssertTrue(app.buttons["楽器・音量"].exists)
         saveScreenshot("1-score")
 
         // タップしてもページが拡大されないこと(ネイティブ化の検証):
@@ -60,8 +60,8 @@ final class ABCStudioUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["SCORE"].exists)
         saveScreenshot("2-after-taps")
 
-        // 楽器タブ: 3声部の行が出る
-        app.buttons["楽器"].tap()
+        // 楽器・音量タブ: 3声部の行が出る
+        app.buttons["楽器・音量"].tap()
         XCTAssertTrue(app.staticTexts["Violin"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Piano"].exists)
         XCTAssertTrue(app.staticTexts["Bass"].exists)
@@ -98,10 +98,10 @@ final class ABCStudioUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["停止"].waitForExistence(timeout: 3))
     }
 
-    /// 楽器タブの各パートに独立した音量スライダーがあり、変更した値が表示される。
+    /// 楽器・音量タブの各パートに独立した音量スライダーがあり、変更した値が表示される。
     func testEachPartHasIndependentVolumeSlider() throws {
         let app = launch(abc: Self.ensemble)
-        app.buttons["楽器"].tap()
+        app.buttons["楽器・音量"].tap()
 
         let melody = app.sliders["part-volume-melody"]
         let harmony = app.sliders["part-volume-harmony"]
@@ -115,8 +115,11 @@ final class ABCStudioUITests: XCTestCase {
         XCTAssertTrue(String(describing: bass.value).contains("100"))
 
         melody.adjust(toNormalizedSliderPosition: 0.25)
-        XCTAssertTrue(String(describing: melody.value).contains("25"),
-                      "変更したパートだけ音量表示が変わる")
+        // XCTest のドラッグ位置は概算なので、25% との厳密な一致は要求しない。
+        let adjustedPercent = try XCTUnwrap(Int((melody.value as? String ?? "")
+            .replacingOccurrences(of: "%", with: "")))
+        XCTAssertGreaterThan(adjustedPercent, 0)
+        XCTAssertLessThan(adjustedPercent, 50, "操作したパートの音量表示が下がる")
         XCTAssertTrue(String(describing: harmony.value).contains("100"))
         XCTAssertTrue(String(describing: bass.value).contains("100"))
         saveScreenshot("parts-volume")

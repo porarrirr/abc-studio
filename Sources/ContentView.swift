@@ -32,7 +32,7 @@ struct ContentView: View {
     @AppStorage("scoreFollowEnabled") private var followEnabled = true
     /// Info.plist でエクスポート宣言した独自 UTI(なければプレーンテキスト扱い)
     private let abcType = UTType("jp.porari.abc") ?? .plainText
-    private let tabs = ["楽譜", "楽器", "ABCを編集", "ライブラリ"]
+    private let tabs = ["楽譜", "楽器・音量", "ABCを編集", "ライブラリ"]
 
     /// iPhone(コンパクト幅)では譜面を余白なしの全画面表示にする
     private var isCompact: Bool { hSize == .compact }
@@ -318,12 +318,12 @@ struct ContentView: View {
         .accessibilityValue(followEnabled ? "オン" : "オフ")
     }
 
-    // MARK: - 楽器ペイン
+    // MARK: - 楽器・音量ペイン
 
     private var partsPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 8) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("INSTRUMENTS")
                             .font(.system(size: 10, weight: .heavy))
@@ -333,13 +333,9 @@ struct ContentView: View {
                             .font(.system(size: 21, weight: .semibold))
                             .foregroundStyle(Color.ink)
                     }
-                    Spacer()
                     Text("音量は再生中にも変更できます。楽器の変更は次の再生から反映されます。")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.sub)
-                        .frame(maxWidth: 330, alignment: .trailing)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
                 }
                 .padding(.horizontal, 17).padding(.top, 21).padding(.bottom, 8)
 
@@ -439,6 +435,9 @@ struct ContentView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.tealDark)
                     .frame(width: 20)
+                Text("音量")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.sub)
                 Slider(value: Binding(
                     get: { model.partVolume(for: voice.id) },
                     set: { model.setPartVolume(voice.id, volume: $0) }), in: 0...1)
