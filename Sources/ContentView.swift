@@ -898,6 +898,14 @@ private struct AboutView: View {
         return text
     }
 
+    private func licenseText(_ name: String) -> String {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return "ライセンス文書を読み込めませんでした。公開リポジトリのライセンスをご確認ください。"
+        }
+        return text
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -921,9 +929,26 @@ private struct AboutView: View {
                     }
                     Text("ABC 記譜法の楽譜表示・再生アプリ。解析・譜面描画・再生はすべてネイティブ実装です。")
                         .font(.system(size: 13))
+                    VStack(alignment: .leading, spacing: 10) {
+                        Link("サポート", destination: URL(string: "https://porarrirr.github.io/abc-studio/support.html")!)
+                        Link("プライバシーポリシー", destination: URL(string: "https://porarrirr.github.io/abc-studio/privacy.html")!)
+                        Link("ソースコード（MIT License）", destination: URL(string: "https://github.com/porarrirr/abc-studio")!)
+                        Link("お問い合わせ: musicabc@rarari.org", destination: URL(string: "mailto:musicabc@rarari.org")!)
+                    }
+                    .font(.system(size: 13))
+                    DisclosureGroup("アプリのライセンス（MIT）") {
+                        Text(licenseText("App-LICENSE"))
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
                     Text("楽譜記号: Bravura © Steinberg Media Technologies GmbH(SIL Open Font License 1.1)")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                    DisclosureGroup("Bravura のライセンス（OFL 1.1）") {
+                        Text(licenseText("Bravura-OFL"))
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
                     Text(attribution)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(.secondary)

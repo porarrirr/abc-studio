@@ -1,0 +1,12 @@
+{
+  "name": "ABC Studio - 楽譜を表示・再生",
+  "subtitle": "ABC記譜法の編集、パート練習とMIDI出力",
+  "promotional_text": "ABC譜を、読む・聴く・編集する。78種類の楽器割り当て、パート別音量、速度調整とループで練習をサポート。PDF・MIDI・WAVに書き出して、音楽づくりの続きを。",
+  "keywords": "作曲,譜面,プレイヤー,楽器,合奏,音楽,五線譜,スコア,シーケンサー,オフライン,ループ,テンポ,ピアノ,バイオリン,PDF,WAV,テキスト,ビューア",
+  "description": "ABC譜を、読む。聴く。自分で整える。\n\nABC Studioは、ABC記譜法のテキストから楽譜を表示し、演奏・編集できるiPhone / iPadアプリです。楽曲の確認やパート練習を、オフラインで進められます。\n\n【楽譜を表示・再生】\n・.abc / .txtファイル、クリップボード、サンプル曲から読み込み\n・複数曲入りファイルの曲選択、V:による複数パートに対応\n・ピンチで拡大、音符をタップして再生位置へ移動\n・再生中の音符表示と譜面の自動追従\n\n【パート練習を自分のペースで】\n・78種類の楽器割り当て。ピアノ、弦楽器、管楽器、ギター、打楽器など\n・パート別の音量、ミュート・ソロ、マスター音量\n・50〜200%の速度調整、曲全体のループ、シーク\n・バックグラウンド再生、ロック画面・コントロールセンターから操作\n\n【編集・保存・書き出し】\n・内蔵ABCエディタ、入力の診断、下書きの自動保存\n・アプリ内ライブラリへ曲を保存、名前変更・削除\n・ABCテキスト、楽譜PDF / PNG、MIDI、演奏WAVの書き出しと共有\n\n【プライバシー】\nアカウント登録、広告、解析SDK、トラッキング機能はありません。アプリは楽譜や利用状況を開発者へ送信しません。共有先、Appleのバックアップ、問い合わせメールは各サービスの取り扱いに従います。\n\n【対応と制限】\niOS / iPadOS 17以降。すべてのABC拡張に対応するものではありません。P:による演奏順と&による声部分割には未対応です。一部の楽器はGM音色を共有します。合唱は楽器音色であり、歌詞を歌う機能はありません。\n\nソースコードはMIT Licenseで公開。音色・フォントのライセンスはアプリ内の「このアプリについて」で確認できます。\n\nサポート: support@rarari.org\n共通窓口: musicabc@rarari.org\nプライバシー: privacy@rarari.org",
+  "support_url": "https://porarrirr.github.io/abc-studio/support.html",
+  "marketing_url": "https://porarrirr.github.io/abc-studio/",
+  "privacy_url": "https://porarrirr.github.io/abc-studio/privacy.html",
+  "copyright": "2026 porari",
+  "review_notes": "No login or account is required. On launch, a three-part demo score appears. Tap Play at the bottom to hear it; the Instruments/Volume tab controls individual parts, the ABC editor tab edits the source, and Library stores tunes. The top-right menu exports ABC/PDF/PNG/MIDI/WAV and opens About with the privacy policy and license notices. All score processing and audio rendering work offline. No ads, IAP, analytics or tracking SDKs. The app uses local UserDefaults and creation timestamps of files within its app container as declared in PrivacyInfo.xcprivacy. Some instruments share GM timbres; the choir is an instrument sound, not lyric synthesis."
+}

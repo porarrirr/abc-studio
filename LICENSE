@@ -1,14 +1,21 @@
-ABC Studio
+MIT License
 
-Copyright (c) 2026 porari. All rights reserved.
+Copyright (c) 2026 porari
 
-本ソフトウェアおよび付随するソースコード・ドキュメントの無断での複製、
-改変、再配布、商用利用を禁じます。
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Unauthorized copying, modification, redistribution, or commercial use of
-this software and its associated files is prohibited.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-なお、SoundFont/ 以下の音色サンプル(.m4a)は Fluid (R3) SoundFont
-(MIT License, Copyright (c) 2000-2002, 2008 Frank Wen)由来の素材であり、
-引き続き MIT License の条件に従います。詳細は
-SoundFont/SOUNDFONT-ATTRIBUTION.md を参照してください。
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

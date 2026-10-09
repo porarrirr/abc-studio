@@ -1,80 +1,99 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>プライバシーポリシー — ABC Studio</title>
-  <meta name="description" content="ABC Studio のプライバシーポリシー。個人情報の取り扱いについて。">
+  <meta name="description" content="ABC Studioが端末内に保存するデータ、ファイル共有、お問い合わせ、本サイトでの情報の取り扱いについて説明します。">
+  <meta name="theme-color" content="#1b706b">
+  <meta property="og:title" content="プライバシーポリシー — ABC Studio">
+  <meta property="og:description" content="ABC Studioが端末内に保存するデータ、ファイル共有、お問い合わせ、本サイトでの情報の取り扱いについて説明します。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://porarrirr.github.io/abc-studio/privacy.html">
+  <meta property="og:image" content="https://porarrirr.github.io/abc-studio/icon.png">
+  <link rel="canonical" href="https://porarrirr.github.io/abc-studio/privacy.html">
   <link rel="icon" href="icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <a class="skip" href="#main">本文へスキップ</a>
+
   <header class="site-header">
     <div class="container">
-      <a class="brand" href="index.html">
-        <img src="icon.png" alt="ABC Studio アイコン">
-        ABC Studio
-      </a>
-      <nav class="site-nav">
-        <a href="index.html">トップ</a>
+      <a class="brand" href="index.html"><img src="icon.png" width="36" height="36" alt="">ABC Studio</a>
+      <nav aria-label="メインナビゲーション">
+        <a href="index.html">紹介</a>
         <a href="support.html">サポート</a>
         <a href="privacy.html" aria-current="page">プライバシー</a>
       </nav>
     </div>
   </header>
 
-  <div class="page-title">
-    <h1>プライバシーポリシー</h1>
-    <p class="updated">最終更新日:2026年9月27日</p>
-  </div>
+  <main id="main">
+    <section class="page-intro container" aria-labelledby="page-title">
+      <p class="eyebrow">YOUR MUSIC STAYS YOURS.</p>
+      <h1 id="page-title">プライバシーポリシー</h1>
+      <p class="note">最終更新日：2026年10月9日</p>
+    </section>
 
-  <div class="container prose">
-    <p>ABC Studio(以下「本アプリ」)は、利用者のプライバシーを尊重し、個人情報を収集しない方針で設計・運営されています。本ポリシーでは、本アプリにおける情報の取り扱いについて説明します。</p>
+    <article class="container prose">
+      <p>porari（以下「運営者」）は、ABC Studio（以下「本アプリ」）およびABC Studioの案内サイト（以下「本サイト」）における情報の取り扱いを、次のとおり説明します。</p>
 
-    <h2>1. 収集する情報</h2>
-    <p>本アプリは、個人情報(氏名、メールアドレス、位置情報、デバイス識別子など)を<strong>一切収集しません</strong>。アカウント登録も不要です。</p>
+      <h2>1. 本アプリでの情報の取り扱い</h2>
+      <p>本アプリはiOS 17以降で動作するオフラインアプリです。ABCの解析、譜面の描画、演奏の処理は端末内で行います。本アプリにアカウント、広告、アクセス解析SDK、トラッキング機能、開発者への自動クラッシュ報告機能はありません。本アプリから楽譜や利用状況などを運営者へ送信することはありません。</p>
 
-    <h2>2. データの保存場所</h2>
-    <ul>
-      <li>読み込んだ楽譜ファイル、エディタの下書き、設定(表示倍率・音色の割り当てなど)は、すべてお使いのデバイス内にのみ保存されます。</li>
-      <li>これらのデータが開発者のサーバーや第三者に送信されることはありません。</li>
-    </ul>
+      <h2>2. 端末内に保存される情報</h2>
+      <p>本アプリは、機能の提供と次回起動時の復元のため、次の情報を端末内のアプリ用保存領域に保存します。これらを本アプリから運営者へ送信することはありません。</p>
+      <ul>
+        <li>現在のABCテキストと編集中の下書き、最後に開いたファイル名</li>
+        <li>譜面の表示倍率と再生位置への追従設定</li>
+        <li>アプリ内ライブラリに保存したABCファイルと、各曲の表示名、作成日時、曲数</li>
+      </ul>
+      <p>ライブラリの曲はアプリ内で削除できます。現在のABCテキストや下書きはクリア操作で消去できます。本アプリを端末から削除すると、アプリ用保存領域のデータも通常は端末から削除されます。「Appを取り除く」では書類とデータが保持される場合があります。</p>
+      <p>共有用のABC、PDF、PNG、MIDI、WAVファイルを作るときは、端末内の一時領域にファイルを作成します。一時ファイルはOSにより削除されることがあります。共有先に保存したファイルは、その保存先の管理下に置かれます。</p>
+      <p>iCloudやコンピュータへのバックアップを有効にしている場合、本アプリのデータがバックアップに含まれることがあります。バックアップの対象や管理は端末の設定とAppleのサービスに従います。詳しくは<a href="https://support.apple.com/ja-jp/108770">Appleの「iCloudバックアップの対象」</a>をご確認ください。</p>
 
-    <h2>3. ネットワーク通信</h2>
-    <p>本アプリはインターネット通信を行いません。解析ツール(アナリティクス)、広告、トラッキング、クラッシュレポートの外部送信も一切ありません。</p>
+      <h2>3. ファイルとクリップボード</h2>
+      <p>ファイルを読み込むときは、利用者がファイル選択画面で選んだABCまたはテキストファイルを本アプリが読み取ります。「クリップボードから読み込む」を選んだ場合は、クリップボードのテキストを読み取ります。診断結果のコピーを選んだ場合は、その診断テキストをクリップボードに書き込みます。これらの情報は本アプリ内で扱われ、運営者へ送信されません。</p>
 
-    <h2>4. クリップボードの利用</h2>
-    <p>「クリップボードから読み込み」機能を利用者が操作したときのみ、クリップボードの内容(ABC テキスト)を読み取ります。読み取った内容はデバイス内でのみ処理され、外部に送信されることはありません。</p>
+      <h2>4. 書き出し、共有、外部リンク</h2>
+      <p>書き出しや共有は利用者の操作で開始されます。本アプリはiOSの共有画面を表示し、利用者が選んだアプリや保存先にファイルを渡します。メール、AirDrop、クラウドストレージなどの共有先での取り扱いは、それぞれのサービスのプライバシー方針に従います。</p>
+      <p>サポート、プライバシー、GitHubへのリンクを開くと、iOSが設定したブラウザやメールアプリが起動します。外部サイトを開くとそのサイトへの通信が行われます。メールは、利用者がメールアプリから送信した場合に送信されます。</p>
 
-    <h2>5. ファイルへのアクセス</h2>
-    <p>本アプリは、利用者が明示的に選択したファイル(.abc / .txt)にのみアクセスします。選択されていないファイルや他のアプリのデータにアクセスすることはありません。</p>
+      <h2>5. お問い合わせで受け取る情報</h2>
+      <p>利用者がメールで問い合わせると、送信元メールアドレス、本文、添付ファイルと、それらに含まれる情報を運営者と利用したメールサービスが受け取ります。運営者は返信、サポート、不具合調査、および対応に必要な記録のためにこれらを利用し、対応や記録保持に必要な期間保管することがあります。販売や広告目的では利用しません。</p>
+      <p>問い合わせ情報の確認や削除を希望する場合は、<a href="mailto:privacy@rarari.org?subject=ABC%20Studio%20Privacy">プライバシー窓口</a>へご連絡ください。共有する権利のある楽譜の最小限の例をお送りください。パスワードなどの機密情報や、問い合わせに不要な個人情報は送らないでください。</p>
 
-    <h2>6. 書き出し・共有</h2>
-    <p>楽譜の PNG / PDF、MIDI、WAV などの書き出し・共有は、利用者の操作によってのみ行われます。共有先(メール、AirDrop、他アプリなど)の取り扱いは、それぞれのサービスのプライバシーポリシーに従います。</p>
+      <h2>6. 本サイトと外部サービス</h2>
+      <p>本サイトには、運営者が設置したアクセス解析、広告タグ、Cookieを設定するスクリプトはありません。本サイトはGitHub Pagesで配信されています。GitHubはサイトの配信や安全確保のため、IPアドレス、端末・接続情報、閲覧日時や閲覧ページなどを処理することがあります。詳しくは<a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHubのプライバシー声明</a>をご確認ください。</p>
+      <p>App Store、iOSの診断共有設定、iCloudやコンピュータへのバックアップなど、Appleが提供するサービスの情報処理はAppleの設定と<a href="https://www.apple.com/legal/privacy/">Appleのプライバシーポリシー</a>に従います。</p>
 
-    <h2>7. 第三者提供</h2>
-    <p>本アプリはいかなる情報も第三者に提供・販売・共有しません。</p>
+      <h2>7. 児童の情報</h2>
+      <p>本アプリから運営者へ情報を送信する機能はありません。お問い合わせメールに児童の情報が含まれる場合は、その情報を問い合わせの対応に必要な範囲で取り扱います。保護者の方は、問い合わせに不要な児童の個人情報をメールに含めないようご配慮ください。</p>
 
-    <h2>8. 児童のプライバシー</h2>
-    <p>本アプリは個人情報を収集しないため、児童を含むすべての利用者について追加の同意手続きは不要です。</p>
+      <h2>8. ポリシーの変更</h2>
+      <p>本アプリや本サイトの機能、または情報の取り扱いに変更があった場合は、このページを更新し、最終更新日を記載します。</p>
 
-    <h2>9. ポリシーの変更</h2>
-    <p>本ポリシーは、必要に応じて改定することがあります。変更があった場合はこのページでお知らせします。</p>
+      <section class="contact" aria-labelledby="contact-title">
+        <h2 id="contact-title">9. 運営者・お問い合わせ</h2>
+        <p>運営者：porari / ABC Studio</p>
+        <p>プライバシーに関するお問い合わせ：<br><a class="mail" href="mailto:privacy@rarari.org?subject=ABC%20Studio%20Privacy">privacy@rarari.org</a></p>
+        <p>サポート：<a href="mailto:support@rarari.org?subject=ABC%20Studio%20Support">support@rarari.org</a></p>
+        <p>共通窓口：<a href="mailto:musicabc@rarari.org">musicabc@rarari.org</a></p>
+      </section>
+    </article>
+  </main>
 
-    <h2>10. お問い合わせ</h2>
-    <div class="contact-box">
-      <p>本ポリシーに関するご質問は、以下までお寄せください。</p>
-      <p class="mail"><a href="mailto:oooo@rarari.org">oooo@rarari.org</a></p>
-    </div>
-  </div>
-
-  <footer class="site-footer">
+  <footer>
     <div class="container">
-      <nav>
-        <a href="index.html">トップ</a>
+      <a class="brand" href="index.html">ABC Studio</a>
+      <nav aria-label="フッターナビゲーション">
         <a href="support.html">サポート</a>
+        <a href="privacy.html">プライバシーポリシー</a>
+        <a href="https://github.com/porarrirr/abc-studio">GitHub</a>
+        <a href="mailto:musicabc@rarari.org">musicabc@rarari.org</a>
       </nav>
-      <p>Copyright © 2026 porari. All rights reserved.</p>
+      <p>© 2026 porari · iPhone / iPad のための ABC 楽譜アプリ</p>
     </div>
   </footer>
 </body>

@@ -12,7 +12,9 @@
 		1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37637923AE91FC1C667E53C /* PlaybackEngine.swift */; };
 		1B9F3811223E89184D23537D /* ABCStudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */; };
 		347E4CD320B30488D7009399 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F57AAD715D90CC75F90F7685 /* Assets.xcassets */; };
+		4886E77C36ADFA49C4DBA49A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 890519812F0AAC73F27C3DF2 /* PrivacyInfo.xcprivacy */; };
 		4BE4E1AD9E35A5E73EF3EC28 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB288F09B401AC08F8B888B5 /* ShareSheet.swift */; };
+		51962760B5E56D39AEA4D5A8 /* App-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 33395E6BD4429F8A37709CB6 /* App-LICENSE.txt */; };
 		5BF44BBAB892067F6311F7C6 /* ABCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C9B9B4B38999E35AB7482D /* ABCParser.swift */; };
 		749FA10A30447F72D20DE778 /* ABCStudioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */; };
 		890689B210E175C17953CC3E /* Bravura-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */; };
@@ -49,8 +51,9 @@
 		0465B01CCC938AAB90BEF40B /* ScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreView.swift; sourceTree = "<group>"; };
 		096526D529D1B1DA38555B2E /* ABCBeaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCBeaming.swift; sourceTree = "<group>"; };
 		1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCDiagnostics.swift; sourceTree = "<group>"; };
+		33395E6BD4429F8A37709CB6 /* App-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "App-LICENSE.txt"; sourceTree = "<group>"; };
 		502BB13B0AE1B8EE0BBA7165 /* MIDIWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIWriter.swift; sourceTree = "<group>"; };
-		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Bravura-OFL.txt"; sourceTree = "<group>"; };
 		5809CEC823FC7895ADE3035D /* ScoreExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreExporter.swift; sourceTree = "<group>"; };
 		5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Bravura.otf; sourceTree = "<group>"; };
@@ -58,6 +61,7 @@
 		73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Instruments.swift; sourceTree = "<group>"; };
 		76C9B9B4B38999E35AB7482D /* ABCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCParser.swift; sourceTree = "<group>"; };
 		82863007FC78C0AF5E60CD4F /* Samples */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Samples; sourceTree = SOURCE_ROOT; };
+		890519812F0AAC73F27C3DF2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundFontPlayer.swift; sourceTree = "<group>"; };
 		99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCStudioUITests.swift; sourceTree = "<group>"; };
 		A37637923AE91FC1C667E53C /* PlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackEngine.swift; sourceTree = "<group>"; };
@@ -171,10 +175,12 @@
 			isa = PBXGroup;
 			children = (
 				C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */,
+				33395E6BD4429F8A37709CB6 /* App-LICENSE.txt */,
 				F57AAD715D90CC75F90F7685 /* Assets.xcassets */,
 				B4E4407BE361A1C64DF8B504 /* ContentView.swift */,
 				CBBC5CAAD0D02CD15B758F85 /* Info.plist */,
 				A39618F97CFC74D714F5475E /* LibraryStore.swift */,
+				890519812F0AAC73F27C3DF2 /* PrivacyInfo.xcprivacy */,
 				FB288F09B401AC08F8B888B5 /* ShareSheet.swift */,
 				BCAF4D872EFAD86A8B52390C /* SourceEditor.swift */,
 				CA80B895588686D897CD6C03 /* StudioModel.swift */,
@@ -286,9 +292,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				51962760B5E56D39AEA4D5A8 /* App-LICENSE.txt in Resources */,
 				347E4CD320B30488D7009399 /* Assets.xcassets in Resources */,
 				890689B210E175C17953CC3E /* Bravura-OFL.txt in Resources */,
 				017386CC0AED12BC814B87CB /* Bravura.otf in Resources */,
+				4886E77C36ADFA49C4DBA49A /* PrivacyInfo.xcprivacy in Resources */,
 				D50F8EDF5A306C8676047AE2 /* Samples in Resources */,
 				C0409DFC0AE51DB54ABD39B2 /* SoundFont in Resources */,
 			);
@@ -355,7 +363,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 77V64TWCFD;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -568,7 +575,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 77V64TWCFD;
 				INFOPLIST_FILE = Sources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

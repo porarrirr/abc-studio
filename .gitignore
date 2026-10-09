@@ -1,5 +1,5 @@
 .DS_Store
-.derived/
+.derived*/
 *.xcuserstate
 xcuserdata/
 
@@ -25,3 +25,13 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/
 fastlane/test_output/
+
+# Local release products, logs and credentials
+output/
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.mobileprovision
+ExportOptions.local.plist
