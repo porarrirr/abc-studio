@@ -1,0 +1,12 @@
+[
+  {
+    "key": "iphone",
+    "path": "raw/iphone-score.png",
+    "prompt": "Use case: compositing / ads-marketing. Asset type: Japanese App Store screenshot for ABC Studio iPhone. Edit target: attached ACTUAL iPhone screenshot, preserve every visible app UI item and music notation; make no invented controls, no invented content. Make one premium portrait marketing image in aspect ratio 1206:2622, intended exact 1206 x 2622 final export. Backdrop: warm cream #f6f5ed with restrained deep teal #1b706b. Top 17% of canvas has large tasteful Japanese text exactly \"ABC譜を、読む。聴く。\" and one small second line exactly \"楽譜表示・再生・編集\". Place the full provided screenshot flat front-on, sharp and legible, with no perspective and no cropping, occupying about 80% width and 74% height below the caption. A thin subtle rounded frame and soft shadow only. The screenshot is the real source material; keep its layout, labels, staff lines, notes, title and colors identical. Keep all functionality faithful to the reference. No external musical instruments, stock people, app badges, price claims, watermark or new UI. Output a single opaque RGB PNG."
+  },
+  {
+    "key": "ipad",
+    "path": "raw/ipad-score.png",
+    "prompt": "Use case: compositing / ads-marketing. Asset type: Japanese App Store screenshot for ABC Studio iPad. Edit target: attached ACTUAL iPad screenshot. Preserve the actual app UI and all music notation. Make one elegant portrait marketing image at aspect ratio 2064:2752, intended exact 2064 x 2752 final export. Use warm cream #f6f5ed and deep teal #1b706b. Top 15% has big tasteful Japanese text exactly \"大きな楽譜で、音を確かめる。\" and a small supporting line exactly \"iPadでも、ABC Studio\". Below it place the COMPLETE supplied iPad screenshot front-on, preserving its 3:4 aspect ratio, with crisp original UI, as a flat inset about 87% width and 75% height with thin rounded border and soft shadow. No perspective. Maintain all notes, labels, spacing, layout and blank score canvas within the screenshot exactly. Do not invent musical content or buttons. No price, reviews, badges, watermark, external props. Opaque RGB PNG."
+  }
+]

@@ -6,6 +6,8 @@
 	<string>ja</string>
 	<key>CFBundleDisplayName</key>
 	<string>ABC Studio</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

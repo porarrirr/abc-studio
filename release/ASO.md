@@ -7,7 +7,7 @@ The exact copy is stored in `metadata-ja.json`.
 - Keywords cover concrete usage and formats without repeating the name/subtitle, competitors, prices or rankings.
 - Promotional text highlights part control, speed and export; no unmeasured quality or popularity claims.
 - No search volume or ranking is claimed: this is a feature-based keyword hypothesis, not measured demand.
-- First screenshot: real score and playback. Second: real instrument/volume controls. iPad: native iPad layout.
+- First screenshot: real score and playback. iPad: native iPad layout. Instrument/volume controls are described in the text; a separate part-control image can be added in a future iteration.
 - Store images must retain accurate app UI. ImageGen is used for presentation based on captured app screens; inspect the result before upload.
 
 Sources checked 2026-10-09:

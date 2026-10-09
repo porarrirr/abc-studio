@@ -4,7 +4,7 @@ ABC notation → sheet music → playback. A native, offline iPhone / iPad app.
 
 [紹介ページ](https://porarrirr.github.io/abc-studio/) · [サポート](https://porarrirr.github.io/abc-studio/support.html) · [プライバシー](https://porarrirr.github.io/abc-studio/privacy.html)
 
-![ABC Studio の実際の画面](docs/screenshots/iphone-score.png)
+<img src="docs/screenshots/iphone-score.png" alt="ABC Studio の実際のiPhone画面" width="300">
 
 ABC 記譜法のファイルを読み込み、楽譜を表示して再生する iPhone / iPad アプリです。
 
