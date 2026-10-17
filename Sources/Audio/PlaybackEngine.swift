@@ -324,20 +324,7 @@ public final class PlaybackEngine: ObservableObject {
     }
 
     private func beat(forSeconds sec100: TimeInterval) -> Double {
-        guard let seq = sequence, let first = seq.tempoMap.first else {
-            return sec100 * 2
-        }
-        var seconds = 0.0
-        var prev = first
-        for point in seq.tempoMap.dropFirst() {
-            let segment = (point.beat - prev.beat) * 60.0 / prev.quarterNoteBPM
-            if sec100 <= seconds + segment {
-                return prev.beat + (sec100 - seconds) * prev.quarterNoteBPM / 60.0
-            }
-            seconds += segment
-            prev = point
-        }
-        return prev.beat + (sec100 - seconds) * prev.quarterNoteBPM / 60.0
+        sequence?.beat(forSeconds: sec100) ?? sec100 * 2
     }
 
     // MARK: - Scheduling (lookahead window)

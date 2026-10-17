@@ -62,6 +62,7 @@ xcodebuild -project ABCStudio.xcodeproj -scheme ABCStudio \
 
 デバイス名は `xcrun simctl list devices available` の環境に合わせて変更してください。
 公開前の検証結果・申請状況は [release/STATUS.md](release/STATUS.md) を参照してください。
+テンポ変換処理の性能測定と再現手順は [docs/performance.md](docs/performance.md) にまとめています。
 
 ## 構成とライセンス
 

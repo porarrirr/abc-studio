@@ -28,6 +28,46 @@ final class ABCStudioTests: XCTestCase {
         s.tracks[track].events.map { $0.midi }
     }
 
+    /// Compare against the original linear integration, including extrapolation,
+    /// exact boundaries and copy-on-write mutations of the public tempo map.
+    func testIndexedTempoConversionsMatchLinearIntegration() {
+        func linear(_ points: [TempoPoint], _ beat: Double) -> Double {
+            guard var previous = points.first else { return beat * 0.5 }
+            var seconds = 0.0
+            for point in points.dropFirst() {
+                if beat <= point.beat { break }
+                seconds += (point.beat - previous.beat) * 60 / previous.quarterNoteBPM
+                previous = point
+            }
+            return seconds + (beat - previous.beat) * 60 / previous.quarterNoteBPM
+        }
+        let maps: [[TempoPoint]] = [[], [.init(beat: 0, quarterNoteBPM: 120)],
+            (0..<257).map { TempoPoint(beat: Double($0 * 4), quarterNoteBPM: Double(60 + $0 % 121)) },
+            [.init(beat: 2, quarterNoteBPM: 120), .init(beat: 4, quarterNoteBPM: 80),
+             .init(beat: 4, quarterNoteBPM: 160), .init(beat: 8, quarterNoteBPM: 100)]]
+        for map in maps {
+            let sequence = PlaybackSequence(tracks: [], tempoMap: map, totalBeats: 1100)
+            for i in -8...4404 {
+                let beat = Double(i) / 4
+                let expected = linear(map, beat)
+                XCTAssertEqual(sequence.seconds(forBeat: beat), expected, accuracy: 1e-9)
+                XCTAssertEqual(sequence.beat(forSeconds: expected), beat, accuracy: 1e-9)
+            }
+        }
+        let original = PlaybackSequence(tracks: [], tempoMap: maps[2], totalBeats: 1100)
+        var copy = original
+        copy.tempoMap[0].quarterNoteBPM = 40
+        copy.tempoMap.append(.init(beat: 1100, quarterNoteBPM: 75))
+        for beat in [0.0, 4, 1024, 1100, 1200] {
+            XCTAssertEqual(copy.seconds(forBeat: beat), linear(copy.tempoMap, beat), accuracy: 1e-9)
+            XCTAssertEqual(copy.beat(forSeconds: linear(copy.tempoMap, beat)), beat, accuracy: 1e-9)
+            XCTAssertEqual(original.seconds(forBeat: beat), linear(original.tempoMap, beat), accuracy: 1e-9)
+        }
+        copy.tempoMap = []
+        XCTAssertEqual(copy.seconds(forBeat: 8), 4)
+        XCTAssertEqual(copy.beat(forSeconds: 4), 8)
+    }
+
     // MARK: - パーサー
 
     func testBasicParse() {

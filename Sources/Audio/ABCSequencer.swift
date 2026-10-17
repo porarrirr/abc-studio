@@ -54,7 +54,12 @@ public struct MeterPoint: Sendable {
 
 public struct PlaybackSequence: Sendable {
     public var tracks: [PlaybackTrack]
-    public var tempoMap: [TempoPoint]   // sorted, first at beat 0
+    /// Sorted by beat, first at beat 0. Rebuild the index on public mutations too.
+    public var tempoMap: [TempoPoint] {
+        didSet { tempoSeconds = Self.accumulatedSeconds(tempoMap) }
+    }
+    /// Elapsed seconds at each tempo boundary, shared by both conversion directions.
+    private var tempoSeconds: [TimeInterval]
     public var meterMap: [MeterPoint]   // sorted, beat 0 はヘッダ拍子が入る
     public var totalBeats: Double
 
@@ -62,28 +67,52 @@ public struct PlaybackSequence: Sendable {
                 meterMap: [MeterPoint] = []) {
         self.tracks = tracks
         self.tempoMap = tempoMap
+        self.tempoSeconds = Self.accumulatedSeconds(tempoMap)
         self.meterMap = meterMap
         self.totalBeats = totalBeats
     }
 
-    /// 拍位置 → 秒(speed=100 換算)。テンポマップの区間線形補間。
+    private static func accumulatedSeconds(_ points: [TempoPoint]) -> [TimeInterval] {
+        guard !points.isEmpty else { return [] }
+        var result = [TimeInterval](repeating: 0, count: points.count)
+        for i in 1..<points.count {
+            result[i] = result[i - 1]
+                + (points[i].beat - points[i - 1].beat) * 60.0 / points[i - 1].quarterNoteBPM
+        }
+        return result
+    }
+
+    /// 拍位置 → 秒(speed=100 換算)。累積秒と二分探索で O(log テンポ数)。
+    // Keep the constant-tempo fast path inline in scheduling/export loops.
+    @inline(__always)
     public func seconds(forBeat beat: Double) -> TimeInterval {
-        guard let first = tempoMap.first else {
-            return beat * 0.5   // 120 qnBPM default
+        guard let first = tempoMap.first else { return beat * 0.5 }
+        if tempoMap.count == 1 || beat <= first.beat {
+            return (beat - first.beat) * 60.0 / first.quarterNoteBPM
         }
-        var seconds = 0.0
-        var prev = first
-        if beat <= prev.beat {
-            return (beat - prev.beat) * 60.0 / prev.quarterNoteBPM
+        var lo = 1, hi = tempoMap.count
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            if tempoMap[mid].beat < beat { lo = mid + 1 } else { hi = mid }
         }
-        for point in tempoMap.dropFirst() {
-            if beat <= point.beat {
-                return seconds + (beat - prev.beat) * 60.0 / prev.quarterNoteBPM
-            }
-            seconds += (point.beat - prev.beat) * 60.0 / prev.quarterNoteBPM
-            prev = point
+        let i = lo - 1
+        return tempoSeconds[i] + (beat - tempoMap[i].beat) * 60.0 / tempoMap[i].quarterNoteBPM
+    }
+
+    /// 秒 → 拍。再生クロックも同じテンポ索引を使う。
+    @inline(__always)
+    public func beat(forSeconds seconds: TimeInterval) -> Double {
+        guard let first = tempoMap.first else { return seconds * 2 }
+        if tempoMap.count == 1 || seconds <= 0 {
+            return first.beat + seconds * first.quarterNoteBPM / 60.0
         }
-        return seconds + (beat - prev.beat) * 60.0 / prev.quarterNoteBPM
+        var lo = 1, hi = tempoSeconds.count
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            if tempoSeconds[mid] < seconds { lo = mid + 1 } else { hi = mid }
+        }
+        let i = lo - 1
+        return tempoMap[i].beat + (seconds - tempoSeconds[i]) * tempoMap[i].quarterNoteBPM / 60.0
     }
 
     /// speed=100 換算の総再生秒
