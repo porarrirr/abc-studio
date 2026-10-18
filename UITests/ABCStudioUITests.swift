@@ -1,12 +1,17 @@
 import XCTest
 
 /// スモークテスト: 起動・譜面描画・タブ遷移・再生・タップで拡大しないことの確認。
-/// スクリーンショットは /tmp/uitest-*.png に保存される(実行プロセスはmacOS側)。
+/// スクリーンショットはテスト結果に添付し、シミュレータ内の一時フォルダにも保存する。
 final class ABCStudioUITests: XCTestCase {
 
     private func saveScreenshot(_ name: String) {
         let shot = XCUIScreen.main.screenshot()
-        try? shot.pngRepresentation.write(to: URL(fileURLWithPath: "/tmp/uitest-\(name).png"))
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        try? shot.pngRepresentation.write(to: FileManager.default.temporaryDirectory
+            .appendingPathComponent("uitest-\(name).png"))
     }
 
     override func setUpWithError() throws {
@@ -157,4 +162,94 @@ final class ABCStudioUITests: XCTestCase {
 
         app.buttons["停止"].firstMatch.tap()
     }
+
+    /// Settings must remain usable without squeezing controls into the player.
+    func testPlaybackSettingsAndExportFormats() throws {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["再生設定"].tap()
+        XCTAssertTrue(app.sliders["再生速度"].waitForExistence(timeout: 3))
+        app.buttons["75%"].tap()
+        let loop = app.switches["ループ再生"]
+        XCTAssertTrue(loop.exists)
+        loop.tap()
+        XCTAssertEqual(loop.value as? String, "1")
+        saveScreenshot("redesign-playback-settings")
+        app.buttons["完了"].tap()
+        XCTAssertTrue(app.buttons["再生設定"].value as? String == "速度 75%")
+
+        app.buttons["書き出し・共有"].tap()
+        XCTAssertTrue(app.staticTexts["PDF"].waitForExistence(timeout: 3))
+        for format in ["PNG 画像", "MIDI", "WAV 音声", "ABC テキスト"] {
+            XCTAssertTrue(app.staticTexts[format].exists)
+        }
+        saveScreenshot("redesign-export")
+        app.staticTexts["ABC テキスト"].tap()
+        XCTAssertTrue(app.otherElements["ActivityListView"].waitForExistence(timeout: 5),
+                      "The system share sheet opens after the format sheet dismisses")
+    }
+
+    /// The keyboard should leave room to write and provide an explicit way back.
+    func testEditorKeyboardAndApply() throws {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["ABCを編集"].tap()
+        app.buttons["エディタの操作"].tap()
+        app.buttons["入力内容をすべて削除"].tap()
+        app.alerts.buttons["すべて削除"].tap()
+        let editor = app.textViews.firstMatch
+        editor.tap()
+        editor.typeText("X:1\nT:New melody\nM:4/4\nL:1/4\nK:C\nC D E F | G A B c |")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        saveScreenshot("redesign-keyboard")
+        app.toolbars.buttons["完了"].tap()
+        XCTAssertTrue(app.buttons["楽譜に反映"].waitForExistence(timeout: 3))
+        app.buttons["楽譜に反映"].tap()
+        XCTAssertTrue(app.staticTexts["SCORE"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["New melody"].firstMatch.exists)
+        XCTAssertTrue(app.buttons["再生"].isHittable)
+        saveScreenshot("redesign-applied")
+    }
+
+    /// Save/search/rename/delete only the item created by this test.
+    func testLibrarySaveSearchAndRename() throws {
+        let title = "UI Library " + UUID().uuidString.prefix(8)
+        let renamed = title + " renamed"
+        let abc = "X:1\nT:\(title)\nM:4/4\nL:1/4\nK:C\nC D E F |"
+        let app = launch(abc: abc)
+        app.buttons["ライブラリ"].tap()
+        app.buttons["現在の曲を保存"].tap()
+        let search = app.textFields["library-search"]
+        search.tap()
+        search.typeText(String(title) + "\n")
+        let actions = app.buttons[String(title) + "の操作"]
+        XCTAssertTrue(actions.waitForExistence(timeout: 3))
+        actions.tap()
+        app.buttons["名前を変更"].tap()
+        let name = app.alerts.textFields.firstMatch
+        name.typeText(" renamed")
+        app.alerts.buttons["保存"].tap()
+        XCTAssertTrue(app.buttons[String(renamed) + "の操作"].waitForExistence(timeout: 3))
+        saveScreenshot("redesign-library")
+        app.buttons[String(renamed) + "の操作"].tap()
+        app.buttons["削除"].tap()
+        app.alerts.buttons["削除"].tap()
+        XCTAssertFalse(app.buttons[String(renamed) + "の操作"].exists)
+    }
+
+    func testLibrarySamplesAndLandscapeLayout() throws {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["ライブラリ"].tap()
+        saveScreenshot("redesign-library-overview")
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["サンプルを開く"].firstMatch.waitForExistence(timeout: 3))
+        app.staticTexts["サンプルを開く"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["SCORE"].waitForExistence(timeout: 3))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        XCTAssertTrue(app.buttons["再生"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["再生"].isHittable)
+        let score = app.scrollViews.firstMatch
+        XCTAssertGreaterThan(score.frame.height, 100, "Landscape leaves usable space for the score")
+        saveScreenshot("redesign-landscape")
+    }
+
 }

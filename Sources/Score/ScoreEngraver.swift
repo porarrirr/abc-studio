@@ -1645,7 +1645,7 @@ public enum ScorePainter {
         let c: CGColor
         switch ink {
         case .primary: c = CGColor(red: 0.11, green: 0.13, blue: 0.14, alpha: 1)
-        case .accent: c = CGColor(red: 0.85, green: 0.42, blue: 0.10, alpha: 1)
+        case .accent: c = CGColor(red: 0.251, green: 0.357, blue: 0.780, alpha: 1)
         case .faint: c = CGColor(red: 0.50, green: 0.55, blue: 0.55, alpha: 1)
         }
         colorCache[ink] = c

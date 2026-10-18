@@ -1,674 +1,125 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private extension Color {
-    static let canvas = Color(red: 0.961, green: 0.961, blue: 0.937)
-    static let card = Color(red: 1, green: 0.996, blue: 0.980)
-    static let topbar = Color(red: 1, green: 0.992, blue: 0.973)
-    static let line = Color(red: 0.894, green: 0.910, blue: 0.882)
-    static let ink = Color(red: 0.098, green: 0.196, blue: 0.231)
-    static let sub = Color(red: 0.443, green: 0.529, blue: 0.514)
-    static let faint = Color(red: 0.604, green: 0.671, blue: 0.651)
-    static let teal = Color(red: 0.086, green: 0.494, blue: 0.451)
-    static let tealDark = Color(red: 0.106, green: 0.439, blue: 0.420)
-    static let amber = Color(red: 0.914, green: 0.635, blue: 0.263)
-    static let fieldBg = Color(red: 0.988, green: 0.996, blue: 0.984)
+/// Shared colors keep the workspace, editor and sheets visually consistent.
+enum StudioTheme {
+    static let background = Color(red: 0.957, green: 0.961, blue: 0.973)
+    static let surface = Color.white
+    static let ink = Color(red: 0.102, green: 0.125, blue: 0.180)
+    static let secondary = Color(red: 0.400, green: 0.435, blue: 0.506)
+    static let line = Color(red: 0.882, green: 0.898, blue: 0.925)
+    static let accent = Color(red: 0.251, green: 0.357, blue: 0.780)
+    static let accentSoft = Color(red: 0.922, green: 0.937, blue: 0.996)
+    static let danger = Color(red: 0.737, green: 0.231, blue: 0.263)
+    static let trackColors: [Color] = [accent, Color(red: 0.235, green: 0.525, blue: 0.490),
+                                      Color(red: 0.686, green: 0.435, blue: 0.267),
+                                      Color(red: 0.557, green: 0.380, blue: 0.671)]
+}
+
+private enum StudioTab: Int, CaseIterable {
+    case score, mixer, editor, library
+    var title: String {
+        switch self {
+        case .score: return "楽譜"
+        case .mixer: return "ミキサー"
+        case .editor: return "エディタ"
+        case .library: return "ライブラリ"
+        }
+    }
+    var accessibilityLabel: String {
+        switch self {
+        case .mixer: return "楽器・音量"
+        case .editor: return "ABCを編集"
+        default: return title
+        }
+    }
+    var icon: String {
+        switch self {
+        case .score: return "music.note.list"
+        case .mixer: return "slider.horizontal.3"
+        case .editor: return "chevron.left.forwardslash.chevron.right"
+        case .library: return "square.stack.3d.up"
+        }
+    }
 }
 
 struct ContentView: View {
     @EnvironmentObject private var model: StudioModel
     @Environment(\.horizontalSizeClass) private var hSize
-    @State private var tab = 0
+    @Environment(\.verticalSizeClass) private var vSize
+    @State private var tab: StudioTab = .score
     @State private var seekDrag: Double?
     @State private var speedDrag: Double?
     @State private var showAbout = false
+    @State private var showPlaybackSettings = false
+    @State private var showExport = false
+    @State private var pendingExport: (() -> Void)?
     @State private var showClearConfirm = false
-    /// ライブラリの名前変更/削除確認対象
+    @State private var keyboardVisible = false
     @State private var renamingItem: LibraryItem?
     @State private var renameText = ""
     @State private var deletingItem: LibraryItem?
-    /// 譜面の表示倍率と自動追従(次回起動時も維持)
+    @State private var librarySearch = ""
     @AppStorage("scoreZoom") private var scoreZoom = 1.0
     @AppStorage("scoreFollowEnabled") private var followEnabled = true
-    /// Info.plist でエクスポート宣言した独自 UTI(なければプレーンテキスト扱い)
     private let abcType = UTType("jp.porari.abc") ?? .plainText
-    private let tabs = ["楽譜", "楽器・音量", "ABCを編集", "ライブラリ"]
-
-    /// iPhone(コンパクト幅)では譜面を余白なしの全画面表示にする
     private var isCompact: Bool { hSize == .compact }
+    private var isShort: Bool { vSize == .compact }
+    private var hasSource: Bool { !model.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            workspace
+        HStack(spacing: 0) {
+            if !isCompact { sidebar }
+            VStack(spacing: 0) {
+                header
+                paneContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !keyboardVisible {
+                    VStack(spacing: 0) {
+                        playerBar
+                        if isCompact { bottomNavigation }
+                    }
+                    .background(StudioTheme.surface)
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.canvas.ignoresSafeArea())
-        .safeAreaInset(edge: .bottom) { playerBar }
+        .background(StudioTheme.background.ignoresSafeArea())
+        .foregroundStyle(StudioTheme.ink)
+        .tint(StudioTheme.accent)
+        .buttonStyle(.plain)
         .overlay(alignment: .bottom) { toastOverlay }
         .overlay { if model.isRendering { renderingOverlay } }
         .fileImporter(isPresented: $model.showImporter,
-                      allowedContentTypes: [abcType, .plainText],
-                      allowsMultipleSelection: false) { result in
+                      allowedContentTypes: [abcType, .plainText], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):
-                if let url = urls.first { model.importFile(url) }
-            case .failure(let error):
-                model.importError = error.localizedDescription
+                if let url = urls.first { model.importFile(url); tab = .score }
+            case .failure(let error): model.importError = error.localizedDescription
             }
         }
-        .sheet(item: $model.shareFile) { file in
-            ShareSheet(items: [file.url])
-        }
+        .sheet(item: $model.shareFile) { ShareSheet(items: [$0.url]) }
         .sheet(isPresented: $showAbout) { AboutView() }
+        .sheet(isPresented: $showPlaybackSettings) { playbackSettings }
+        .sheet(isPresented: $showExport, onDismiss: {
+            let action = pendingExport
+            pendingExport = nil
+            action?()
+        }) { exportSheet }
         .alert("読み込みエラー", isPresented: Binding(
-            get: { model.importError != nil },
-            set: { if !$0 { model.importError = nil } }
+            get: { model.importError != nil }, set: { if !$0 { model.importError = nil } }
         )) {
-            Button("コピー") {
-                UIPasteboard.general.string = model.importError
-                model.importError = nil
-            }
-            Button("閉じる") { model.importError = nil }
-        } message: {
-            Text(model.importError ?? "")
-        }
-        .onAppear { model.restore() }
-        .focusable()
-        .onKeyPress(.space) { model.togglePlay(); return .handled }
-        .onKeyPress(.leftArrow) {
-            model.seek(to: max(0, model.engine.progress - 0.02)); return .handled
-        }
-        .onKeyPress(.rightArrow) {
-            model.seek(to: min(1, model.engine.progress + 0.02)); return .handled
-        }
-    }
-
-    // MARK: - ヘッダー
-
-    private var header: some View {
-        HStack {
-            HStack(spacing: 10) {
-                Text("♮")
-                    .font(.custom("Georgia", size: 27))
-                    .foregroundStyle(.white)
-                    .frame(width: 37, height: 37)
-                    .background(Color(red: 0.106, green: 0.439, blue: 0.420))
-                    .clipShape(RoundedRectangle(cornerRadius: 11))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("ABC Studio").font(.system(size: 17, weight: .semibold)).foregroundStyle(Color.ink)
-                    Text("楽譜を、音に。")
-                        .font(.system(size: 10))
-                        .tracking(0.8)
-                        .foregroundStyle(Color.sub)
-                }
-            }
-            Spacer()
-            Button { model.showImporter = true } label: {
-                Label("ABCを読み込む", systemImage: "square.and.arrow.up")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.tealDark)
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(Color(red: 0.957, green: 0.980, blue: 0.965))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 0.796, green: 0.863, blue: 0.839)))
-            }
-            Menu {
-                Button { model.importPaste() } label: {
-                    Label("クリップボードから読み込む", systemImage: "doc.on.clipboard")
-                }
-                if !model.samples.isEmpty {
-                    Menu("サンプルを開く") {
-                        ForEach(model.samples, id: \.url) { sample in
-                            Button(sample.name) { model.loadSample(sample.url) }
-                        }
-                    }
-                }
-                Divider()
-                Button { model.saveToLibrary() } label: {
-                    Label("現在の曲をライブラリに保存", systemImage: "square.and.arrow.down")
-                }
-                .disabled(model.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button { tab = 3 } label: {
-                    Label("ライブラリを開く", systemImage: "books.vertical")
-                }
-                Divider()
-                Button { model.shareSource() } label: {
-                    Label("ABC を保存・共有", systemImage: "doc.text")
-                }
-                Menu("楽譜を書き出す") {
-                    Button { model.shareScorePNG() } label: { Label("PNG 画像", systemImage: "photo") }
-                    Button { model.shareScorePDF() } label: { Label("PDF", systemImage: "doc") }
-                }
-                Button { model.shareMIDI() } label: {
-                    Label("MIDI を書き出す", systemImage: "pianokeys")
-                }
-                Button { model.shareAudio() } label: {
-                    Label("音声 (WAV) を書き出す", systemImage: "waveform")
-                }
-                .disabled(model.isRendering)
-                Divider()
-                Button { showAbout = true } label: {
-                    Label("このアプリについて", systemImage: "info.circle")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.tealDark)
-                    .frame(width: 40, height: 40)
-            }
-            .accessibilityLabel("メニュー")
-        }
-        .padding(.horizontal, 22)
-        .frame(height: 66)
-        .background(Color.topbar)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
-    }
-
-    // MARK: - ワークスペース(タブ+ペイン)
-
-    /// タブとペインが残りの画面をすべて使う。コンパクト幅ではカード装飾を外して全画面化。
-    private var workspace: some View {
-        VStack(spacing: 0) {
-            tabBar
-            paneContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-        }
-        .background(Color.card)
-        .clipShape(RoundedRectangle(cornerRadius: isCompact ? 0 : 15))
-        .overlay(RoundedRectangle(cornerRadius: isCompact ? 0 : 15)
-            .stroke(Color(red: 0.875, green: 0.906, blue: 0.875)))
-        .shadow(color: Color(red: 0.125, green: 0.239, blue: 0.212)
-            .opacity(isCompact ? 0 : 0.06), radius: 21, y: 9)
-        .padding(.horizontal, isCompact ? 0 : 16)
-        .padding(.top, isCompact ? 0 : 14)
-        .padding(.bottom, isCompact ? 0 : 16)
-        .frame(maxWidth: 1240)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: 17) {
-            ForEach(tabs.indices, id: \.self) { i in
-                Button { tab = i } label: {
-                    Text(tabs[i])
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(tab == i ? Color.tealDark : Color.sub)
-                        .padding(.vertical, 15)
-                        .padding(.horizontal, 2)
-                        .overlay(alignment: .bottom) {
-                            Rectangle()
-                                .fill(tab == i ? Color.teal : .clear)
-                                .frame(height: 3)
-                        }
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .background(Color(red: 0.976, green: 0.984, blue: 0.969))
-        .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
-    }
-
-    @ViewBuilder
-    private var paneContent: some View {
-        switch tab {
-        case 0: scorePane
-        case 1: partsPane
-        case 2: sourcePane
-        default: libraryPane
-        }
-    }
-
-    // MARK: - 楽譜ペイン
-
-    private var scorePane: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("SCORE")
-                            .font(.system(size: 9, weight: .heavy))
-                            .tracking(1.6)
-                            .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-                        Text(model.subtitle)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.sub)
-                            .lineLimit(1)
-                    }
-                    Text(model.title)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Color.ink)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                if let book = model.book, book.tunes.count > 1 {
-                    Picker("曲を選択", selection: Binding(
-                        get: { model.selectedTune },
-                        set: { model.selectTune($0) })) {
-                        ForEach(book.tunes.indices, id: \.self) { i in
-                            Text(book.tunes[i].title.isEmpty ? "曲 \(i + 1)" : book.tunes[i].title).tag(i)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .font(.system(size: 12))
-                    .tint(Color.tealDark)
-                    .labelsHidden()
-                }
-                zoomControl
-                followToggle
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .overlay(alignment: .bottom) { Rectangle().fill(Color.line).frame(height: 1) }
-
-            if let tune = model.tune {
-                ScoreView(tune: tune, highlight: model.highlight, cursorID: model.cursorID,
-                          isPlaying: model.engine.isPlaying,
-                          zoom: $scoreZoom, followEnabled: followEnabled,
-                          onTapNote: { model.seekToElement($0) })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Spacer()
-            }
-        }
-    }
-
-    private func setZoom(_ z: Double) {
-        scoreZoom = min(ScoreView.maxZoom, max(ScoreView.minZoom, (z * 20).rounded() / 20))
-    }
-
-    private var zoomControl: some View {
-        HStack(spacing: 0) {
-            Button { setZoom(scoreZoom - 0.1) } label: {
-                Image(systemName: "minus").frame(width: 28, height: 30)
-            }
-            .accessibilityLabel("縮小")
-            Button { setZoom(1) } label: {
-                Text("\(Int((scoreZoom * 100).rounded()))%")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .frame(minWidth: 34)
-            }
-            .accessibilityLabel("表示倍率をリセット")
-            Button { setZoom(scoreZoom + 0.1) } label: {
-                Image(systemName: "plus").frame(width: 28, height: 30)
-            }
-            .accessibilityLabel("拡大")
-        }
-        .font(.system(size: 11, weight: .bold))
-        .foregroundStyle(Color.tealDark)
-        .background(Color(red: 0.957, green: 0.973, blue: 0.965))
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color(red: 0.855, green: 0.894, blue: 0.867)))
-    }
-
-    private var followToggle: some View {
-        Button { followEnabled.toggle() } label: {
-            Label("追従", systemImage: followEnabled ? "location.fill" : "location.slash")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(followEnabled ? .white : Color.sub)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(followEnabled ? Color.teal : Color(red: 0.957, green: 0.973, blue: 0.965))
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(followEnabled ? Color.teal : Color(red: 0.855, green: 0.894, blue: 0.867)))
-        }
-        .accessibilityLabel("自動追従")
-        .accessibilityValue(followEnabled ? "オン" : "オフ")
-    }
-
-    // MARK: - 楽器・音量ペイン
-
-    private var partsPane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("INSTRUMENTS")
-                            .font(.system(size: 10, weight: .heavy))
-                            .tracking(1.8)
-                            .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-                        Text("パートごとの音量・音色")
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(Color.ink)
-                    }
-                    Text("音量は再生中にも変更できます。楽器の変更は次の再生から反映されます。")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.sub)
-                }
-                .padding(.horizontal, 17).padding(.top, 21).padding(.bottom, 8)
-
-                if let tune = model.tune {
-                    ForEach(Array(tune.voices.enumerated()), id: \.element.id) { index, voice in
-                        partRow(voice: voice, index: index)
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Image(systemName: "speaker.wave.3.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.tealDark)
-                        Text("マスター音量")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color.ink)
-                        Spacer()
-                        Text("\(Int((model.masterVolume * 100).rounded()))%")
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.sub)
-                    }
-                    Slider(value: Binding(
-                        get: { model.masterVolume },
-                        set: { model.setMasterVolume($0) }), in: 0...1)
-                        .tint(Color.teal)
-                        .accessibilityLabel("マスター音量")
-                }
-                .padding(13)
-                .background(Color(red: 0.988, green: 0.992, blue: 0.980))
-                .clipShape(RoundedRectangle(cornerRadius: 13))
-                .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(red: 0.886, green: 0.918, blue: 0.882)))
-                .padding(.horizontal, 16).padding(.top, 10)
-
-                Text("合唱は Choir Aahs 音色で再生します。歌詞を歌う音声合成ではありません。ドラムは General MIDI の打楽器配置に従います。S はソロ(そのパートだけ鳴らす)、スピーカーはミュートです。")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.sub)
-                    .lineSpacing(4)
-                    .padding(13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(red: 0.937, green: 0.961, blue: 0.937))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal, 16).padding(.vertical, 22)
-            }
-        }
-    }
-
-    private func partRow(voice: ABCVoice, index: Int) -> some View {
-        let instrument = Instruments.byID(model.assignments[voice.id] ?? "") ?? Instruments.all[0]
-        let muted = model.mutedVoices.contains(voice.id)
-        let soloed = model.soloVoiceID == voice.id
-        let volume = model.partVolume(for: voice.id)
-        let volumePercent = Int((volume * 100).rounded())
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                HStack(spacing: 12) {
-                    Text(instrument.icon)
-                        .font(.system(size: 18))
-                        .foregroundStyle(Color.tealDark)
-                        .frame(width: 37, height: 37)
-                        .background(Color(red: 0.910, green: 0.949, blue: 0.925))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(voice.name)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Color.ink)
-                        Text("パート \(index + 1)")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.faint)
-                    }
-                }
-                .opacity(muted ? 0.45 : 1)
-                Spacer(minLength: 6)
-                Button { model.toggleSolo(voice.id) } label: {
-                    Text("S")
-                        .font(.system(size: 11, weight: .heavy))
-                        .foregroundStyle(soloed ? .white : Color.sub)
-                        .frame(width: 26, height: 26)
-                        .background(soloed ? Color.amber : Color(red: 0.937, green: 0.953, blue: 0.941))
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel(voice.name + "をソロ再生")
-                Button { model.toggleMute(voice.id) } label: {
-                    Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(muted ? .white : Color.sub)
-                        .frame(width: 26, height: 26)
-                        .background(muted ? Color(red: 0.643, green: 0.220, blue: 0.165)
-                                          : Color(red: 0.937, green: 0.953, blue: 0.941))
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel(voice.name + "をミュート")
-            }
-
-            HStack(spacing: 9) {
-                Image(systemName: volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.tealDark)
-                    .frame(width: 20)
-                Text("音量")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.sub)
-                Slider(value: Binding(
-                    get: { model.partVolume(for: voice.id) },
-                    set: { model.setPartVolume(voice.id, volume: $0) }), in: 0...1)
-                    .tint(Color.teal)
-                    .accessibilityLabel(voice.name + "の音量")
-                    .accessibilityValue("\(volumePercent)%")
-                    .accessibilityIdentifier("part-volume-\(voice.id)")
-                Text("\(volumePercent)%")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.sub)
-                    .frame(width: 42, alignment: .trailing)
-                    .accessibilityHidden(true)
-            }
-
-            HStack(spacing: 8) {
-                Text("楽器")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.faint)
-                Spacer()
-                Picker(voice.name + "の楽器", selection: Binding(
-                    get: { model.assignments[voice.id] ?? "piano" },
-                    set: { model.assign(voice.id, instrument: $0) })) {
-                    ForEach(Instruments.categories, id: \.self) { category in
-                        Section(category) {
-                            ForEach(Instruments.all.filter { $0.category == category }, id: \.id) { inst in
-                                Text(inst.label).tag(inst.id)
-                            }
-                        }
-                    }
-                }
-                .pickerStyle(.menu)
-                .font(.system(size: 13, weight: .bold))
-                .tint(Color(red: 0.133, green: 0.310, blue: 0.294))
-                .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(red: 0.796, green: 0.863, blue: 0.831)))
-            }
-        }
-        .padding(12)
-        .background(Color(red: 0.988, green: 0.992, blue: 0.980))
-        .clipShape(RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(red: 0.886, green: 0.918, blue: 0.882)))
-        .padding(.horizontal, 16).padding(.vertical, 5)
-    }
-
-    // MARK: - ソースペイン
-
-    private var sourcePane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("ABC SOURCE")
-                            .font(.system(size: 10, weight: .heavy))
-                            .tracking(1.8)
-                            .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-                        Text("記譜を編集")
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(Color.ink)
-                    }
-                    Spacer()
-                    HStack(spacing: 8) {
-                        Button("検証") { model.validateSource() }
-                            .buttonStyle(SmallActionStyle(primary: false))
-                        Button("楽譜に反映") { model.applySource() }
-                            .buttonStyle(SmallActionStyle(primary: true))
-                    }
-                }
-                .padding(.horizontal, 16).padding(.top, 21).padding(.bottom, 9)
-
-                SourceEditor(text: Binding(
-                    get: { model.source },
-                    set: { model.source = $0; model.scheduleValidation() }),
-                    jumpToLine: $model.jumpToLine)
-                    .frame(height: 300)
-                    .overlay(alignment: .topTrailing) {
-                        Button { showClearConfirm = true } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Color(red: 0.643, green: 0.220, blue: 0.165))
-                                .frame(width: 30, height: 30)
-                                .background(Color(red: 0.992, green: 0.941, blue: 0.933))
-                                .clipShape(RoundedRectangle(cornerRadius: 9))
-                                .overlay(RoundedRectangle(cornerRadius: 9)
-                                    .stroke(Color(red: 0.949, green: 0.831, blue: 0.804)))
-                        }
-                        .disabled(model.source.isEmpty)
-                        .opacity(model.source.isEmpty ? 0.45 : 1)
-                        .padding(10)
-                        .accessibilityLabel("入力内容をすべて削除")
-                    }
-                    .padding(.horizontal, 16)
-                    .alert("入力内容を削除", isPresented: $showClearConfirm) {
-                        Button("すべて削除", role: .destructive) { model.clearSource() }
-                        Button("キャンセル", role: .cancel) {}
-                    } message: {
-                        Text("エディタの ABC テキストをすべて削除します。楽譜に反映済みの内容は変わりません。")
-                    }
-
-                if !model.diagnostics.isEmpty {
-                    diagnosticsPanel
-                }
-
-                Text("X:、T:、M:、L:、K: を含む ABC を入力してください。複数声部には V: を使います。エラーや警告は行番号付きで上に表示され、タップすると該当行に移動します。")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.sub)
-                    .padding(.horizontal, 16).padding(.vertical, 18)
-            }
-        }
-    }
-
-    private var diagnosticsPanel: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(model.diagnosticSummary)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.sub)
-                Spacer()
-                Button("コピー") {
-                    UIPasteboard.general.string = "ABC Studio 診断結果\n" + model.diagnosticText()
-                    model.toast("診断結果をコピーしました")
-                }
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Color.tealDark)
-                .padding(.horizontal, 12).padding(.vertical, 5)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(red: 0.796, green: 0.863, blue: 0.831)))
-            }
-            .padding(.bottom, 3)
-
-            ScrollView {
-                ForEach(Array(model.diagnostics.enumerated()), id: \.offset) { _, d in
-                Button { model.jump(to: d) } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .top, spacing: 0) {
-                            Text("\(d.severity == .error ? "エラー" : "警告")\(d.line > 0 ? " \(d.line) 行目" : "")\(d.column > 0 ? " \(d.column) 文字目" : "")")
-                                .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
-                            Text(" " + d.message)
-                                .font(.system(size: 11.5, design: .monospaced))
-                        }
-                        if !d.context.isEmpty {
-                            Text(d.context)
-                                .font(.system(size: 11.5, design: .monospaced))
-                                .lineLimit(1)
-                                .padding(.leading, 14)
-                                .overlay(alignment: .leading) {
-                                    Rectangle()
-                                        .fill((d.severity == .error
-                                            ? Color(red: 0.643, green: 0.220, blue: 0.165)
-                                            : Color(red: 0.541, green: 0.392, blue: 0.125)).opacity(0.6))
-                                        .frame(width: 2)
-                                        .offset(x: -7)
-                                }
-                                .opacity(0.75)
-                        }
-                    }
-                    .foregroundStyle(d.severity == .error
-                        ? Color(red: 0.643, green: 0.220, blue: 0.165)
-                        : Color(red: 0.541, green: 0.392, blue: 0.125))
-                    .padding(EdgeInsets(top: 7, leading: 11, bottom: 7, trailing: 11))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(d.severity == .error
-                        ? Color(red: 0.992, green: 0.941, blue: 0.933)
-                        : Color(red: 0.992, green: 0.973, blue: 0.925))
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(d.severity == .error
-                        ? Color(red: 0.949, green: 0.831, blue: 0.804)
-                        : Color(red: 0.941, green: 0.890, blue: 0.761)))
-                }
-                .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(.horizontal, 16).padding(.top, 10)
-        .frame(maxHeight: 200)
-    }
-
-    // MARK: - ライブラリペイン
-
-    private var libraryPane: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("LIBRARY")
-                            .font(.system(size: 10, weight: .heavy))
-                            .tracking(1.8)
-                            .foregroundStyle(Color(red: 0.137, green: 0.545, blue: 0.498))
-                        Text("保存した曲")
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(Color.ink)
-                    }
-                    Spacer()
-                    Button("現在の曲を保存") { model.saveToLibrary() }
-                        .buttonStyle(SmallActionStyle(primary: true))
-                        .disabled(model.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding(.horizontal, 17).padding(.top, 21).padding(.bottom, 8)
-
-                if model.libraryItems.isEmpty {
-                    Text("まだ曲はありません。「現在の曲を保存」で、表示中の ABC をライブラリに保存できます。")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.sub)
-                        .lineSpacing(4)
-                        .padding(13)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(red: 0.937, green: 0.961, blue: 0.937))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .padding(.horizontal, 16).padding(.top, 8)
-                } else {
-                    ForEach(model.libraryItems) { item in
-                        libraryRow(item)
-                    }
-                }
-
-                Text("曲をタップすると開いて「楽譜」タブに移ります。▶ で開いてすぐ再生。長押しで名前の変更・削除ができます。")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.sub)
-                    .lineSpacing(4)
-                    .padding(13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(red: 0.937, green: 0.961, blue: 0.937))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .padding(.horizontal, 16).padding(.vertical, 22)
-            }
-        }
+            Button("コピー") { UIPasteboard.general.string = model.importError; model.importError = nil }
+            Button("閉じる", role: .cancel) { model.importError = nil }
+        } message: { Text(model.importError ?? "") }
+        .alert("入力内容を削除", isPresented: $showClearConfirm) {
+            Button("すべて削除", role: .destructive) { model.clearSource() }
+            Button("キャンセル", role: .cancel) {}
+        } message: { Text("エディタの ABC テキストをすべて削除します。楽譜に反映済みの内容は変わりません。") }
         .alert("名前を変更", isPresented: Binding(
-            get: { renamingItem != nil },
-            set: { if !$0 { renamingItem = nil } }
+            get: { renamingItem != nil }, set: { if !$0 { renamingItem = nil } }
         )) {
             TextField("名前", text: $renameText)
             Button("保存") {
@@ -678,206 +129,820 @@ struct ContentView: View {
             Button("キャンセル", role: .cancel) { renamingItem = nil }
         }
         .alert("ライブラリから削除", isPresented: Binding(
-            get: { deletingItem != nil },
-            set: { if !$0 { deletingItem = nil } }
+            get: { deletingItem != nil }, set: { if !$0 { deletingItem = nil } }
         )) {
             Button("削除", role: .destructive) {
                 if let item = deletingItem { model.deleteLibraryItem(item) }
                 deletingItem = nil
             }
             Button("キャンセル", role: .cancel) { deletingItem = nil }
-        } message: {
-            Text("「\(deletingItem?.name ?? "")」を削除します。この操作は取り消せません。")
+        } message: { Text("「\(deletingItem?.name ?? "")」を削除します。この操作は取り消せません。") }
+        .onAppear { model.restore() }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardVisible = isCompact
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardVisible = false
+        }
+        .onChange(of: tab) { _, _ in dismissKeyboard() }
+        .focusable(tab == .score || tab == .mixer)
+        .onKeyPress(.space) {
+            guard tab == .score || tab == .mixer else { return .ignored }
+            model.togglePlay(); return .handled
+        }
+        .onKeyPress(.leftArrow) {
+            guard tab == .score || tab == .mixer else { return .ignored }
+            model.seek(to: max(0, model.engine.progress - 0.02)); return .handled
+        }
+        .onKeyPress(.rightArrow) {
+            guard tab == .score || tab == .mixer else { return .ignored }
+            model.seek(to: min(1, model.engine.progress + 0.02)); return .handled
         }
     }
 
-    private func libraryRow(_ item: LibraryItem) -> some View {
-        HStack {
-            HStack(spacing: 12) {
-                Image(systemName: "music.note")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.tealDark)
-                    .frame(width: 37, height: 37)
-                    .background(Color(red: 0.910, green: 0.949, blue: 0.925))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.name)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Color.ink)
-                        .lineLimit(1)
-                    Text(item.createdAt.formatted(date: .numeric, time: .shortened)
-                        + " · \(item.tuneCount) 曲")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.faint)
+    // MARK: Navigation
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            if isCompact {
+                Image(systemName: "waveform.path")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(StudioTheme.accent)
+                Text("ABC Studio")
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+            } else {
+                Label(tab.title, systemImage: tab.icon)
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Button { model.showImporter = true } label: { Label("ファイルから読み込む", systemImage: "folder") }
+                Button { model.importPaste(); tab = .score } label: { Label("クリップボードから読み込む", systemImage: "doc.on.clipboard") }
+                if !model.samples.isEmpty {
+                    Menu("サンプルを開く", systemImage: "music.note") {
+                        ForEach(model.samples, id: \.url) { sample in
+                            Button(sample.name) { model.loadSample(sample.url); tab = .score }
+                        }
+                    }
+                }
+            } label: {
+                Label("読み込む", systemImage: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 13)
+                    .frame(minHeight: 44)
+                    .background(StudioTheme.accentSoft, in: Capsule())
+                    .foregroundStyle(StudioTheme.accent)
+            }
+            .accessibilityLabel("ABCを読み込む")
+            Menu {
+                Button { model.saveToLibrary() } label: { Label("現在の曲をライブラリに保存", systemImage: "bookmark") }
+                    .disabled(!hasSource)
+                Button { showExport = true } label: { Label("書き出し・共有", systemImage: "square.and.arrow.up") }
+                    .disabled(model.tune == nil)
+                Divider()
+                Button { showAbout = true } label: { Label("このアプリについて", systemImage: "info.circle") }
+            } label: { Image(systemName: "ellipsis").font(.system(size: 20)).frame(width: 44, height: 44) }
+                .accessibilityLabel("メニュー")
+        }
+        .padding(.horizontal, isCompact ? 20 : 28)
+        .frame(minHeight: isShort ? 48 : 64)
+        .background(StudioTheme.surface)
+        .overlay(alignment: .bottom) { Divider().overlay(StudioTheme.line) }
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 32) {
+            HStack(spacing: 10) {
+                Image(systemName: "waveform.path").font(.system(size: 26, weight: .semibold)).foregroundStyle(StudioTheme.accent)
+                Text("ABC Studio").font(.system(size: 22, weight: .bold, design: .rounded))
+            }
+            .padding(.top, 24)
+            VStack(spacing: 6) {
+                ForEach(StudioTab.allCases, id: \.rawValue) { item in
+                    Button { tab = item } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: item.icon).frame(width: 24)
+                            Text(item.title).font(.system(size: 15, weight: .semibold))
+                            Spacer()
+                        }
+                        .padding(15)
+                        .foregroundStyle(tab == item ? StudioTheme.accent : StudioTheme.secondary)
+                        .background(tab == item ? StudioTheme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .accessibilityLabel(item.accessibilityLabel)
+                    .accessibilityAddTraits(tab == item ? .isSelected : [])
                 }
             }
             Spacer()
-            Button {
-                model.openLibraryItem(item, play: true)
-                tab = 0
-            } label: {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
-                    .background(Color.teal)
-                    .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: "music.quarternote.3").font(.system(size: 24)).foregroundStyle(StudioTheme.accent)
+                Text("楽譜を、音に。").font(.system(size: 16, weight: .semibold))
+                Text("読む。聴く。つくる。\nあなたの音楽のワークスペース。")
+                    .font(.system(size: 12)).lineSpacing(5).foregroundStyle(StudioTheme.secondary)
             }
-            .accessibilityLabel(item.name + "を再生")
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(StudioTheme.background, in: RoundedRectangle(cornerRadius: 16))
+            .padding(.bottom, 24)
         }
-        .padding(12)
-        .background(Color(red: 0.988, green: 0.992, blue: 0.980))
-        .clipShape(RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(red: 0.886, green: 0.918, blue: 0.882)))
-        .padding(.horizontal, 16).padding(.vertical, 5)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            model.openLibraryItem(item)
-            tab = 0
+        .padding(.horizontal, 16)
+        .frame(width: 236)
+        .background(StudioTheme.surface)
+        .overlay(alignment: .trailing) { Divider() }
+    }
+
+    private var bottomNavigation: some View {
+        HStack(spacing: 0) {
+            ForEach(StudioTab.allCases, id: \.rawValue) { item in
+                Button { tab = item } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 20, weight: tab == item ? .semibold : .regular))
+                            .frame(width: 54, height: 28)
+                            .background(tab == item ? StudioTheme.accentSoft : .clear, in: Capsule())
+                        if !isShort { Text(item.title).font(.system(size: 10, weight: tab == item ? .bold : .medium)) }
+                    }
+                    .foregroundStyle(tab == item ? StudioTheme.accent : StudioTheme.secondary)
+                    .frame(maxWidth: .infinity, minHeight: isShort ? 40 : 60)
+                    .contentShape(Rectangle())
+                }
+                .accessibilityLabel(item.accessibilityLabel)
+                .accessibilityAddTraits(tab == item ? .isSelected : [])
+            }
         }
-        .contextMenu {
-            Button { model.openLibraryItem(item); tab = 0 } label: {
-                Label("開く", systemImage: "doc.text.magnifyingglass")
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .overlay(alignment: .top) { Divider().overlay(StudioTheme.line) }
+    }
+
+    @ViewBuilder private var paneContent: some View {
+        switch tab {
+        case .score: scorePane
+        case .mixer: partsPane
+        case .editor: sourcePane
+        case .library: libraryPane
+        }
+    }
+
+    // MARK: Score
+
+    private var scorePane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if isShort {
+                HStack(spacing: 12) {
+                    Text(model.title).font(.system(size: 19, weight: .bold)).lineLimit(1)
+                    Spacer(minLength: 0)
+                    zoomControl
+                    followControl
+                    Button { showExport = true } label: {
+                        Image(systemName: "square.and.arrow.up").frame(width: 44, height: 44)
+                    }.accessibilityLabel("書き出し・共有").disabled(model.tune == nil)
+                }.padding(.horizontal, 20).padding(.vertical, 6)
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        eyebrow("SCORE", detail: "楽譜")
+                        Text(model.title)
+                            .font(.system(size: isCompact ? 25 : 32, weight: .bold))
+                            .lineLimit(2).minimumScaleFactor(0.8)
+                        Text(model.subtitle)
+                            .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary).lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    Button { showExport = true } label: {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 18, weight: .medium))
+                            .frame(width: 44, height: 44)
+                            .background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    .disabled(model.tune == nil)
+                    .accessibilityLabel("書き出し・共有")
+                }
+                .padding(.horizontal, isCompact ? 22 : 28).padding(.top, 24).padding(.bottom, 18)
+
+                HStack(spacing: 8) {
+                    Label(model.tune.map { "\($0.meter.display) · ♩ = \(Int($0.tempo.quarterNoteBPM.rounded()))" } ?? "楽譜の表示", systemImage: "music.note")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(StudioTheme.secondary)
+                    Spacer(minLength: 0)
+                    zoomControl
+                    followControl
+                }
+                .padding(.horizontal, isCompact ? 20 : 28).padding(.bottom, 12)
             }
-            Button { model.openLibraryItem(item, play: true); tab = 0 } label: {
-                Label("再生", systemImage: "play")
+
+            if let book = model.book, book.tunes.count > 1 {
+                Picker("曲を選択", selection: Binding(get: { model.selectedTune }, set: { model.selectTune($0) })) {
+                    ForEach(book.tunes.indices, id: \.self) { i in
+                        Text(book.tunes[i].title.isEmpty ? "曲 \(i + 1)" : book.tunes[i].title).tag(i)
+                    }
+                }
+                .pickerStyle(.menu).padding(.horizontal, 16).padding(.bottom, 6)
             }
-            Divider()
-            Button {
-                renameText = item.name
-                renamingItem = item
-            } label: {
-                Label("名前を変更", systemImage: "pencil")
-            }
-            Button(role: .destructive) { deletingItem = item } label: {
-                Label("削除", systemImage: "trash")
+
+            if let tune = model.tune {
+                ScoreView(tune: tune, highlight: model.highlight, cursorID: model.cursorID,
+                          isPlaying: model.engine.isPlaying, zoom: $scoreZoom, followEnabled: followEnabled,
+                          onTapNote: { model.seekToElement($0) })
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line.opacity(0.8)))
+                    .padding(.horizontal, isCompact ? 12 : 28)
+                    .padding(.bottom, 12)
+            } else {
+                emptyState(icon: "music.note", title: "音楽をはじめよう", message: "ABCファイルを読み込むか、\nライブラリのサンプルを開いてみましょう。") {
+                    Button("ライブラリを開く") { tab = .library }.buttonStyle(StudioActionStyle())
+                }
             }
         }
     }
 
-    // MARK: - プレイヤーバー
-
-    private var playerBar: some View {
-        HStack(spacing: 8) {
-            Button { model.togglePlay() } label: {
-                Text(model.engine.isPlaying ? "Ⅱ" : "▶")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.white)
-                    .frame(width: 43, height: 43)
-                    .background(Color.teal)
-                    .clipShape(Circle())
-                    .shadow(color: Color.teal.opacity(0.2), radius: 5, y: 2)
-            }
-            .accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生")
-            Button { model.stopPlayback() } label: {
-                Text("■")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color(red: 0.271, green: 0.455, blue: 0.416))
-                    .frame(width: 33, height: 33)
-                    .background(Color(red: 0.929, green: 0.953, blue: 0.937))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .accessibilityLabel("停止")
-            Button { model.loopEnabled.toggle() } label: {
-                Image(systemName: "repeat")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(model.loopEnabled ? .white
-                                        : Color(red: 0.271, green: 0.455, blue: 0.416))
-                    .frame(width: 33, height: 33)
-                    .background(model.loopEnabled ? Color.teal
-                                        : Color(red: 0.929, green: 0.953, blue: 0.937))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .accessibilityLabel("ループ再生")
-            VStack(spacing: 6) {
-                HStack {
-                    Text(model.currentTimeText)
-                    Spacer()
-                    Text(model.status).foregroundStyle(Color(red: 0.337, green: 0.529, blue: 0.490))
-                    Spacer()
-                    Text(model.totalTimeText)
-                }
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.sub)
-                Slider(value: Binding(
-                    get: { seekDrag ?? model.engine.progress * 1000 },
-                    set: { seekDrag = $0 }),
-                    in: 0...1000,
-                    onEditingChanged: { editing in
-                        if !editing, let v = seekDrag { model.seek(to: v / 1000) }
-                        if !editing { seekDrag = nil }
-                    })
-                    .tint(Color(red: 0.118, green: 0.545, blue: 0.498))
-                    .frame(height: 8)
-                    .accessibilityLabel("再生位置")
-            }
-            HStack(spacing: 3) {
-                Slider(value: Binding(
-                    get: { speedDrag ?? Double(model.speed) },
-                    set: { speedDrag = $0 }),
-                    in: 50...200, step: 25,
-                    onEditingChanged: { editing in
-                        if !editing, let v = speedDrag { model.setSpeed(Int(v)) }
-                        if !editing { speedDrag = nil }
-                    })
-                    .tint(Color(red: 0.118, green: 0.545, blue: 0.498))
-                    .frame(width: 78)
-                    .accessibilityLabel("再生速度")
-                Text("\(Int((speedDrag ?? Double(model.speed)).rounded()))%")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color(red: 0.133, green: 0.310, blue: 0.294))
-                    .frame(width: 34)
-            }
-            .fixedSize()
+    private var followControl: some View {
+        Button { followEnabled.toggle() } label: {
+            Image(systemName: followEnabled ? "location.fill" : "location.slash")
+                .font(.system(size: 15)).frame(width: 44, height: 44)
+                .foregroundStyle(followEnabled ? StudioTheme.accent : StudioTheme.secondary)
+                .background(followEnabled ? StudioTheme.accentSoft : StudioTheme.surface, in: RoundedRectangle(cornerRadius: 12))
         }
-        .padding(.horizontal, 13)
-        .padding(.top, 11)
-        .padding(.bottom, 12)
-        .background(Color(red: 1, green: 0.996, blue: 0.976))
-        .overlay(alignment: .top) { Rectangle().fill(Color.line).frame(height: 1) }
-        .shadow(color: Color(red: 0.125, green: 0.247, blue: 0.227).opacity(0.07), radius: 12, y: -4)
+        .accessibilityLabel("自動追従").accessibilityValue(followEnabled ? "オン" : "オフ")
+    }
+
+    private var zoomControl: some View {
+        HStack(spacing: 0) {
+            Button { setZoom(scoreZoom - 0.1) } label: { Image(systemName: "minus").frame(width: 44, height: 44) }
+                .accessibilityLabel("縮小").disabled(scoreZoom <= ScoreView.minZoom)
+            Button { setZoom(1) } label: {
+                Text("\(Int((scoreZoom * 100).rounded()))%")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).frame(minWidth: 38, minHeight: 44)
+            }.accessibilityLabel("表示倍率をリセット")
+            Button { setZoom(scoreZoom + 0.1) } label: { Image(systemName: "plus").frame(width: 44, height: 44) }
+                .accessibilityLabel("拡大").disabled(scoreZoom >= ScoreView.maxZoom)
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(StudioTheme.secondary)
+        .background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func setZoom(_ value: Double) {
+        scoreZoom = min(ScoreView.maxZoom, max(ScoreView.minZoom, (value * 20).rounded() / 20))
+    }
+
+    // MARK: Mixer
+
+    private var partsPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                pageHeading("MIXER", title: "音のバランスを、自在に。", description: "パートごとに音色と音量を調整できます。")
+                masterVolumeCard
+                HStack {
+                    Text("パート").font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Text("\(model.tune?.voices.count ?? 0) トラック").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                }
+                if let tune = model.tune, !tune.voices.isEmpty {
+                    LazyVStack(spacing: 12) {
+                        ForEach(Array(tune.voices.enumerated()), id: \.element.id) { index, voice in
+                            partRow(voice: voice, index: index)
+                        }
+                    }
+                } else {
+                    Text("楽譜を読み込むと、ここにパートが表示されます。")
+                        .font(.system(size: 14)).foregroundStyle(StudioTheme.secondary)
+                }
+                Label("音量はすぐに反映。音色を変えると再生は停止します。", systemImage: "info.circle")
+                    .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                DisclosureGroup("合唱・ドラムの音色について") {
+                    Text("合唱は Choir Aahs 音色です。歌詞の発声には対応していません。ドラムは General MIDI の打楽器配置を使います。")
+                        .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary).padding(.top, 8)
+                }.font(.system(size: 12))
+            }
+            .padding(isCompact ? 22 : 28)
+            .frame(maxWidth: 860)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var masterVolumeCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 19)).foregroundStyle(StudioTheme.accent)
+                    .frame(width: 44, height: 44).background(StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("マスター音量").font(.system(size: 15, weight: .semibold))
+                    Text("すべてのパートに適用").font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+                }
+                Spacer()
+                Text("\(Int((model.masterVolume * 100).rounded()))%")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded)).monospacedDigit()
+            }
+            Slider(value: Binding(get: { model.masterVolume }, set: { model.setMasterVolume($0) }), in: 0...1)
+                .accessibilityLabel("マスター音量")
+        }.studioCard()
+    }
+
+    private func partRow(voice: ABCVoice, index: Int) -> some View {
+        let instrument = Instruments.byID(model.assignments[voice.id] ?? "") ?? Instruments.all[0]
+        let muted = model.mutedVoices.contains(voice.id)
+        let soloed = model.soloVoiceID == voice.id
+        let percent = Int((model.partVolume(for: voice.id) * 100).rounded())
+        let color = StudioTheme.trackColors[index % StudioTheme.trackColors.count]
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Text(String(format: "%02d", index + 1))
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(color).frame(width: 44, height: 44)
+                    .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(voice.name).font(.system(size: 16, weight: .semibold))
+                    Text(instrument.category).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+                }.opacity(muted ? 0.45 : 1)
+                Spacer(minLength: 0)
+                Button { model.toggleSolo(voice.id) } label: {
+                    Text("ソロ").font(.system(size: 11, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(soloed ? .white : StudioTheme.secondary)
+                        .background(soloed ? color : StudioTheme.background, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityLabel(voice.name + "をソロ再生").accessibilityValue(soloed ? "オン" : "オフ")
+                Button { model.toggleMute(voice.id) } label: {
+                    Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
+                        .font(.system(size: 15)).frame(width: 44, height: 44)
+                        .foregroundStyle(muted ? StudioTheme.danger : StudioTheme.secondary)
+                        .background(muted ? StudioTheme.danger.opacity(0.09) : StudioTheme.background, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityLabel(voice.name + "をミュート").accessibilityValue(muted ? "オン" : "オフ")
+            }
+            HStack(spacing: 12) {
+                Slider(value: Binding(get: { model.partVolume(for: voice.id) },
+                                      set: { model.setPartVolume(voice.id, volume: $0) }), in: 0...1)
+                    .tint(color).accessibilityLabel(voice.name + "の音量")
+                    .accessibilityValue("\(percent)%").accessibilityIdentifier("part-volume-\(voice.id)")
+                Text("\(percent)%").font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(StudioTheme.secondary).frame(width: 42, alignment: .trailing).accessibilityHidden(true)
+            }
+            Divider()
+            HStack {
+                Text("音色").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                Spacer(minLength: 4)
+                Picker(voice.name + "の楽器", selection: Binding(
+                    get: { model.assignments[voice.id] ?? "piano" }, set: { model.assign(voice.id, instrument: $0) })) {
+                    ForEach(Instruments.categories, id: \.self) { category in
+                        Section(category) {
+                            ForEach(Instruments.all.filter { $0.category == category }, id: \.id) { inst in
+                                Text(inst.label).tag(inst.id)
+                            }
+                        }
+                    }
+                }
+                .pickerStyle(.menu).font(.system(size: 13, weight: .medium))
+            }
+        }.studioCard()
+    }
+
+    // MARK: Editor
+
+    private var sourcePane: some View {
+        GeometryReader { geo in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    pageHeading("ABC EDITOR", title: "ひとつの記譜から、音楽へ。", description: "ABCテキストを編集して、楽譜に反映。")
+                    HStack(spacing: 8) {
+                        Label("ABC ソース", systemImage: "doc.plaintext").font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Text("\(model.source.components(separatedBy: .newlines).count) 行")
+                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
+                        Menu {
+                            Button { model.validateSource(); dismissKeyboard() } label: { Label("記譜を検証", systemImage: "checkmark.circle") }
+                            Button(role: .destructive) { showClearConfirm = true } label: { Label("入力内容をすべて削除", systemImage: "trash") }
+                                .disabled(!hasSource)
+                        } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                            .accessibilityLabel("エディタの操作")
+                    }
+                    .padding(.horizontal, 14).background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+
+                    SourceEditor(text: Binding(get: { model.source }, set: { model.source = $0; model.scheduleValidation() }),
+                                 jumpToLine: $model.jumpToLine)
+                        .frame(height: max(keyboardVisible ? 180 : 260, geo.size.height - 310))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line))
+                    HStack(spacing: 12) {
+                        Label("下書きは自動保存", systemImage: "checkmark.circle")
+                            .font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+                        Spacer(minLength: 0)
+                        Button {
+                            dismissKeyboard()
+                            model.applySource()
+                            if model.tune != nil && !model.diagnostics.contains(where: { $0.severity == .error }) { tab = .score }
+                        } label: { Label("楽譜に反映", systemImage: "arrow.right") }
+                            .buttonStyle(StudioActionStyle()).disabled(!hasSource)
+                    }
+                    if !model.diagnostics.isEmpty { diagnosticsPanel }
+                    DisclosureGroup("ABC記譜法のヒント") {
+                        Text("X: 曲番号　T: 曲名　M: 拍子\nL: 基本音長　K: 調　V: パート\n\n例：C D E F | G A B c |")
+                            .font(.system(size: 12, design: .monospaced))
+                            .lineSpacing(6).foregroundStyle(StudioTheme.secondary).padding(.top, 12)
+                    }.font(.system(size: 12)).padding(.vertical, 4)
+                }
+                .padding(isCompact ? 22 : 28)
+                .frame(maxWidth: 960).frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
+    private var diagnosticsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("記譜のチェック · \(model.diagnostics.count) 件", systemImage: "exclamationmark.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Button("コピー") {
+                    UIPasteboard.general.string = "ABC Studio 診断結果\n" + model.diagnosticText()
+                    model.toast("診断結果をコピーしました")
+                }.font(.system(size: 12, weight: .semibold))
+            }
+            ForEach(Array(model.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                Button { model.jump(to: diagnostic) } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: diagnostic.severity == .error ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(diagnostic.severity == .error ? StudioTheme.danger : Color.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(diagnostic.severity == .error ? "エラー" : "警告") · \(diagnostic.line) 行目")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(diagnostic.message).font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                            if !diagnostic.context.isEmpty {
+                                Text(diagnostic.context).font(.system(size: 11, design: .monospaced)).lineLimit(2).foregroundStyle(StudioTheme.secondary)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6).contentShape(Rectangle())
+                }
+            }
+        }.studioCard()
+    }
+
+    // MARK: Library
+
+    private var filteredLibrary: [LibraryItem] {
+        model.libraryItems.filter { librarySearch.isEmpty || $0.name.localizedStandardContains(librarySearch) }
+    }
+
+    private var libraryPane: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                pageHeading("YOUR LIBRARY", title: "音楽が集まる場所。", description: "お気に入りの楽譜を、いつでも手元に。")
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(StudioTheme.secondary)
+                    TextField("保存した曲を検索", text: $librarySearch).font(.system(size: 14)).submitLabel(.search)
+                        .accessibilityIdentifier("library-search")
+                        .onSubmit { dismissKeyboard() }
+                    if !librarySearch.isEmpty {
+                        Button { librarySearch = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(StudioTheme.secondary).frame(width: 44, height: 44) }
+                            .accessibilityLabel("検索をクリア")
+                    }
+                }
+                .padding(.horizontal, 14).frame(minHeight: 48)
+                .background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 14))
+                if hasSource && librarySearch.isEmpty { saveCurrentCard }
+                HStack {
+                    Text("保存した曲").font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    Text("\(model.libraryItems.count) 曲").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                }
+                if filteredLibrary.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: librarySearch.isEmpty ? "square.stack.3d.up" : "magnifyingglass")
+                            .font(.system(size: 28, weight: .light)).foregroundStyle(StudioTheme.accent)
+                        Text(librarySearch.isEmpty ? "あなたの楽譜棚をつくろう" : "曲が見つかりません")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(librarySearch.isEmpty ? "上の「保存」で、開いている曲を追加できます。" : "別の曲名で検索してみてください。")
+                            .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary).multilineTextAlignment(.center)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 24)
+                } else {
+                    LazyVStack(spacing: 10) { ForEach(filteredLibrary) { libraryRow($0) } }
+                }
+                if librarySearch.isEmpty && !model.samples.isEmpty {
+                    Divider().padding(.vertical, 2)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("まずは、聴いてみよう。").font(.system(size: 18, weight: .semibold))
+                        Text("すぐに試せるサンプル楽譜").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
+                        ForEach(Array(model.samples.enumerated()), id: \.element.url) { index, sample in
+                            Button { model.loadSample(sample.url); tab = .score } label: {
+                                VStack(alignment: .leading, spacing: 18) {
+                                    Image(systemName: index.isMultiple(of: 2) ? "music.note" : "pianokeys")
+                                        .font(.system(size: 24, weight: .light)).foregroundStyle(StudioTheme.accent)
+                                    HStack(alignment: .bottom) {
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(sample.name).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                                            Text("サンプルを開く").font(.system(size: 10)).foregroundStyle(StudioTheme.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "arrow.up.right").font(.system(size: 12)).foregroundStyle(StudioTheme.accent)
+                                    }
+                                }.frame(maxWidth: .infinity, alignment: .leading).studioCard()
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(isCompact ? 22 : 28).frame(maxWidth: 960).frame(maxWidth: .infinity)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var saveCurrentCard: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "music.note.list")
+                .font(.system(size: 24)).foregroundStyle(StudioTheme.accent)
+                .frame(width: 50, height: 58).background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 5) {
+                Text("開いている曲").font(.system(size: 10, weight: .medium)).foregroundStyle(StudioTheme.secondary)
+                Text(model.title).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Button { model.saveToLibrary() } label: { Label("保存", systemImage: "plus") }
+                .buttonStyle(StudioActionStyle()).accessibilityLabel("現在の曲を保存")
+        }
+        .padding(16).background(StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func libraryRow(_ item: LibraryItem) -> some View {
+        HStack(spacing: 10) {
+            Button { model.openLibraryItem(item); tab = .score } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 20)).foregroundStyle(StudioTheme.accent)
+                        .frame(width: 44, height: 52).background(StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(item.name).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                        Text(item.createdAt.formatted(date: .abbreviated, time: .omitted) + " · \(item.tuneCount) 曲")
+                            .font(.system(size: 10)).foregroundStyle(StudioTheme.secondary)
+                    }
+                    Spacer(minLength: 0)
+                }.contentShape(Rectangle())
+            }
+            Button { model.openLibraryItem(item, play: true); tab = .score } label: {
+                Image(systemName: "play.fill").font(.system(size: 15)).foregroundStyle(StudioTheme.accent).frame(width: 44, height: 44)
+            }.accessibilityLabel(item.name + "を再生")
+            Menu { libraryActions(item) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).foregroundStyle(StudioTheme.secondary) }
+                .accessibilityLabel(item.name + "の操作")
+        }
+        .padding(12).background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .contextMenu { libraryActions(item) }
+    }
+
+    @ViewBuilder private func libraryActions(_ item: LibraryItem) -> some View {
+        Button { model.openLibraryItem(item); tab = .score } label: { Label("開く", systemImage: "doc.text.magnifyingglass") }
+        Button { model.openLibraryItem(item, play: true); tab = .score } label: { Label("再生", systemImage: "play") }
+        Button { renameText = item.name; renamingItem = item } label: { Label("名前を変更", systemImage: "pencil") }
+        Button(role: .destructive) { deletingItem = item } label: { Label("削除", systemImage: "trash") }
+    }
+
+    // MARK: Player
+
+    @ViewBuilder private var playerBar: some View {
+        if isShort { compactPlayerBar } else { fullPlayerBar }
+    }
+
+    private var compactPlayerBar: some View {
+        HStack(spacing: 16) {
+            Button { model.togglePlay() } label: {
+                Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 44, height: 44).background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 14))
+            }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
+            Button { model.stopPlayback() } label: {
+                Image(systemName: "stop.fill").frame(width: 44, height: 44)
+            }.accessibilityLabel("停止").disabled(model.tune == nil)
+            Text(model.status).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+            Text(model.currentTimeText).font(.system(size: 10, design: .monospaced))
+            Slider(value: Binding(get: { seekDrag ?? model.engine.progress }, set: { seekDrag = $0 }), in: 0...1,
+                   onEditingChanged: { editing in
+                       if !editing, let value = seekDrag { model.seek(to: value) }
+                       if !editing { seekDrag = nil }
+                   }).accessibilityLabel("再生位置").disabled(model.tune == nil)
+            Text(model.totalTimeText).font(.system(size: 10, design: .monospaced))
+            Button { showPlaybackSettings = true } label: {
+                Text("\(model.speed)%").font(.system(size: 12, weight: .semibold)).frame(minWidth: 50, minHeight: 44)
+            }.accessibilityLabel("再生設定").accessibilityValue("速度 \(model.speed)%")
+        }
+        .padding(.horizontal, 22).padding(.vertical, 6)
+        .background(StudioTheme.surface).overlay(alignment: .top) { Divider() }
+    }
+
+    private var fullPlayerBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    HStack(spacing: 5) {
+                        Circle().fill(model.engine.isPlaying ? StudioTheme.accent : StudioTheme.secondary.opacity(0.6)).frame(width: 5, height: 5)
+                        Text(model.status).font(.system(size: 10)).foregroundStyle(StudioTheme.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                Button { showPlaybackSettings = true } label: {
+                    Text("\(model.speed)%").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(StudioTheme.accent).frame(minWidth: 48, minHeight: 44)
+                        .background(StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                }.accessibilityLabel("再生設定").accessibilityValue("速度 \(model.speed)%")
+                Button { model.stopPlayback() } label: {
+                    Image(systemName: "stop.fill").font(.system(size: 15)).foregroundStyle(StudioTheme.secondary).frame(width: 44, height: 48)
+                }.accessibilityLabel("停止").disabled(model.tune == nil)
+                Button { model.togglePlay() } label: {
+                    Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 50, height: 50)
+                        .background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 17))
+                }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
+            }
+            HStack(spacing: 10) {
+                Text(model.currentTimeText).frame(width: 32, alignment: .leading)
+                Slider(value: Binding(get: { seekDrag ?? model.engine.progress }, set: { seekDrag = $0 }), in: 0...1,
+                       onEditingChanged: { editing in
+                           if !editing, let value = seekDrag { model.seek(to: value) }
+                           if !editing { seekDrag = nil }
+                       })
+                    .accessibilityLabel("再生位置").disabled(model.tune == nil)
+                Text(model.totalTimeText).frame(width: 32, alignment: .trailing)
+            }
+            .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
+        }
+        .padding(.horizontal, isCompact ? 22 : 28).padding(.top, 12).padding(.bottom, 2)
+        .frame(maxWidth: 1000).frame(maxWidth: .infinity)
+        .background(StudioTheme.surface)
+        .overlay(alignment: .top) { Divider().overlay(StudioTheme.line) }
+    }
+
+    private var playbackSettings: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack {
+                            Label("再生速度", systemImage: "speedometer").font(.system(size: 16, weight: .semibold))
+                            Spacer()
+                            Text("\(Int(speedDrag ?? Double(model.speed)))%")
+                                .font(.system(size: 24, weight: .semibold, design: .rounded)).monospacedDigit()
+                        }
+                        Slider(value: Binding(get: { speedDrag ?? Double(model.speed) }, set: { speedDrag = $0 }), in: 50...200, step: 5,
+                               onEditingChanged: { editing in
+                                   if !editing, let value = speedDrag { model.setSpeed(Int(value)) }
+                                   if !editing { speedDrag = nil }
+                               }).accessibilityLabel("再生速度")
+                        HStack(spacing: 8) {
+                            ForEach([50, 75, 100, 125, 150], id: \.self) { speed in
+                                Button { speedDrag = nil; model.setSpeed(speed) } label: {
+                                    Text("\(speed)%").font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                                        .foregroundStyle(model.speed == speed ? .white : StudioTheme.secondary)
+                                        .background(model.speed == speed ? StudioTheme.accent : StudioTheme.background, in: RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                        Text("ゆっくり確かめたり、いつものテンポで聴いたり。")
+                            .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                    }.studioCard()
+                    Toggle(isOn: $model.loopEnabled) { Label("ループ再生", systemImage: "repeat").font(.system(size: 15, weight: .medium)) }
+                        .studioCard()
+                    masterVolumeCard
+                }.padding(22)
+            }
+            .background(StudioTheme.background)
+            .navigationTitle("再生設定").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完了") { showPlaybackSettings = false } } }
+        }
+        .tint(StudioTheme.accent)
+        .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+    }
+
+    private var exportSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(model.title).font(.system(size: 22, weight: .bold)).padding(.top, 8)
+                    Text("使いたい形式を選んで、保存・共有できます。")
+                        .font(.system(size: 13)).foregroundStyle(StudioTheme.secondary)
+                    VStack(spacing: 0) {
+                        exportRow("PDF", detail: "印刷や配布に", icon: "doc.richtext") { model.shareScorePDF() }
+                        Divider().padding(.leading, 64)
+                        exportRow("PNG 画像", detail: "楽譜を画像で共有", icon: "photo") { model.shareScorePNG() }
+                        Divider().padding(.leading, 64)
+                        exportRow("MIDI", detail: "音楽制作アプリへ", icon: "pianokeys") { model.shareMIDI() }
+                        Divider().padding(.leading, 64)
+                        exportRow("WAV 音声", detail: "演奏をオーディオに", icon: "waveform") { model.shareAudio() }
+                        Divider().padding(.leading, 64)
+                        exportRow("ABC テキスト", detail: "記譜のソースを保存", icon: "chevron.left.forwardslash.chevron.right") { model.shareSource() }
+                    }.background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+                }.padding(22)
+            }
+            .background(StudioTheme.background)
+            .navigationTitle("書き出し・共有").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("閉じる") { showExport = false } } }
+        }
+        .tint(StudioTheme.accent).presentationDetents([.large]).presentationDragIndicator(.visible)
+    }
+
+    private func exportRow(_ title: String, detail: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button {
+            // Present sharing only once the export sheet has finished dismissing.
+            pendingExport = action
+            showExport = false
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.system(size: 20)).foregroundStyle(StudioTheme.accent).frame(width: 32)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.system(size: 15, weight: .semibold))
+                    Text(detail).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+            }.padding(18).contentShape(Rectangle())
+        }.buttonStyle(.plain).disabled(model.isRendering)
+    }
+
+    // MARK: Shared presentation
+
+    private func eyebrow(_ text: String, detail: String? = nil) -> some View {
+        HStack(spacing: 8) {
+            Text(text).tracking(2)
+            if let detail { Rectangle().fill(StudioTheme.line).frame(width: 16, height: 1); Text(detail) }
+        }.font(.system(size: 10, weight: .bold)).foregroundStyle(StudioTheme.accent)
+    }
+
+    private func pageHeading(_ eyebrowText: String, title: String, description: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            eyebrow(eyebrowText)
+            Text(title).font(.system(size: isCompact ? 23 : 29, weight: .bold)).fixedSize(horizontal: false, vertical: true)
+            Text(description).font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+        }.padding(.top, 4).padding(.bottom, 4)
+    }
+
+    private func emptyState<Actions: View>(icon: String, title: String, message: String, @ViewBuilder actions: () -> Actions) -> some View {
+        VStack(spacing: 18) {
+            Spacer(minLength: 0)
+            Image(systemName: icon).font(.system(size: 42, weight: .light)).foregroundStyle(StudioTheme.accent)
+            Text(title).font(.system(size: 22, weight: .semibold))
+            Text(message).font(.system(size: 13)).foregroundStyle(StudioTheme.secondary).multilineTextAlignment(.center).lineSpacing(5)
+            actions()
+            Spacer(minLength: 0)
+        }.frame(maxWidth: .infinity).padding(24)
     }
 
     private var toastOverlay: some View {
         Group {
             if let text = model.toastText {
-                Text(text)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(Color(red: 0.137, green: 0.275, blue: 0.255))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .shadow(color: .black.opacity(0.2), radius: 12, y: 4)
-                    .padding(.bottom, 100)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
+                Label(text, systemImage: "info.circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                    .padding(16).background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.12), radius: 16, y: 4)
+                    .padding(.horizontal, 22).padding(.bottom, keyboardVisible ? 20 : (isCompact ? 180 : 120))
+                    .transition(.move(edge: .bottom).combined(with: .opacity)).allowsHitTesting(false)
+                    .accessibilityAddTraits(.updatesFrequently)
             }
-        }
-        .animation(.easeInOut(duration: 0.2), value: model.toastText != nil)
+        }.animation(.easeInOut(duration: 0.2), value: model.toastText != nil)
     }
 
-    /// 音声書き出し中の進行表示
     private var renderingOverlay: some View {
         ZStack {
-            Color.black.opacity(0.25).ignoresSafeArea()
-            VStack(spacing: 10) {
-                ProgressView()
-                    .tint(Color.tealDark)
-                Text("音声を書き出し中…")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.ink)
+            StudioTheme.ink.opacity(0.3).ignoresSafeArea()
+            VStack(spacing: 18) {
+                ProgressView().tint(StudioTheme.accent)
+                Text("音声を書き出し中…").font(.system(size: 16, weight: .semibold))
+                Text("演奏をWAVファイルに変換しています。")
+                    .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
                 Button("キャンセル", role: .cancel) { model.cancelRender() }
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.tealDark)
-                    .accessibilityLabel("書き出しをキャンセル")
-            }
-            .padding(24)
-            .background(Color.card)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-        }
+                    .buttonStyle(StudioActionStyle(primary: false)).accessibilityLabel("書き出しをキャンセル")
+            }.padding(28).background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 24)).padding(24)
+        }.accessibilityAddTraits(.isModal)
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }
 
+private struct StudioActionStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    var primary = true
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(primary ? .white : StudioTheme.accent)
+            .padding(.horizontal, 16).frame(minHeight: 44)
+            .background(primary ? StudioTheme.accent : StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+            .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.75 : 1))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+}
+
+private extension View {
+    func studioCard() -> some View {
+        padding(18)
+            .background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(StudioTheme.line.opacity(0.5)))
+    }
+}
 /// 「このアプリについて」シート。バージョンと音色の帰属表示。
 private struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
@@ -911,11 +976,11 @@ private struct AboutView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 10) {
-                        Text("♮")
-                            .font(.custom("Georgia", size: 24))
+                        Image(systemName: "waveform.path")
+                            .font(.system(size: 24, weight: .semibold))
                             .foregroundStyle(.white)
                             .frame(width: 40, height: 40)
-                            .background(Color(red: 0.106, green: 0.439, blue: 0.420))
+                            .background(StudioTheme.accent)
                             .clipShape(RoundedRectangle(cornerRadius: 11))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("ABC Studio").font(.system(size: 17, weight: .bold))
@@ -964,18 +1029,5 @@ private struct AboutView: View {
                 }
             }
         }
-    }
-}
-
-private struct SmallActionStyle: ButtonStyle {
-    let primary: Bool
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(primary ? .white : Color.tealDark)
-            .padding(.horizontal, 16).padding(.vertical, 11)
-            .background(primary ? Color(red: 0.110, green: 0.494, blue: 0.451) : Color(red: 0.910, green: 0.949, blue: 0.925))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
     }
 }

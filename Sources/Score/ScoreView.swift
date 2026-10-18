@@ -130,7 +130,7 @@ public struct ScoreView: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Color(red: 0.086, green: 0.494, blue: 0.451))
+                .background(StudioTheme.accent)
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         }

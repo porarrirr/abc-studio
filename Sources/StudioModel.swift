@@ -202,7 +202,7 @@ K:C
         selectTune(0)
         if diagnostics.contains(where: { $0.severity == .warning }) {
             status = "読み込み完了（警告あり）"
-            toast("警告があります。「ABCを編集」タブで確認できます")
+            toast("警告があります。「エディタ」タブで確認できます")
         }
         if persist {
             UserDefaults.standard.set(normalized, forKey: "lastABC")
