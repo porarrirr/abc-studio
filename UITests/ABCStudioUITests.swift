@@ -46,6 +46,33 @@ final class ABCStudioUITests: XCTestCase {
     [V:bass] C,2 G,2 | E,2 C,2 | F,2 C,2 | G,4 |
     """
 
+    func testPlaybackSurvivesTabSwitchesMixerScrollingAndSeeking() {
+        let app = launch(abc: Self.ensemble + "\n[V:melody] " + String(repeating: "C D E F | ", count: 32))
+        app.buttons["再生"].tap()
+        XCTAssertTrue(app.buttons["一時停止"].waitForExistence(timeout: 3))
+        for _ in 0..<2 {
+            app.buttons["楽器・音量"].tap()
+            XCTAssertTrue(app.staticTexts["MIXER"].waitForExistence(timeout: 3))
+            app.scrollViews.firstMatch.swipeUp()
+            app.scrollViews.firstMatch.swipeDown()
+            app.buttons["ABCを編集"].tap()
+            XCTAssertTrue(app.textViews.firstMatch.waitForExistence(timeout: 3))
+            app.buttons["楽譜"].tap()
+        }
+        let position = app.sliders["再生位置"]
+        position.adjust(toNormalizedSliderPosition: 0.5)
+        XCTAssertTrue(app.buttons["一時停止"].exists)
+        let moved = NSPredicate { _, _ in
+            guard let text = position.value as? String,
+                  let value = Double(text.replacingOccurrences(of: "%", with: "")) else { return false }
+            return value >= 45
+        }
+        expectation(for: moved, evaluatedWith: nil)
+        waitForExpectations(timeout: 3)
+        app.buttons["停止"].tap()
+        XCTAssertTrue(app.buttons["再生"].waitForExistence(timeout: 3))
+    }
+
     func testScorePlaybackAndNoZoomOnTap() throws {
         let app = launch(abc: Self.ensemble)
 

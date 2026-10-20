@@ -28,6 +28,7 @@ public final class PlaybackEngine: ObservableObject {
 
     private let engine = AVAudioEngine()
     private var makePlayerNode: () -> AVAudioPlayerNode = { AVAudioPlayerNode() }
+    private var makeBufferOverride: ((String, Int, TimeInterval, Double) -> AVAudioPCMBuffer?)?
     private var playerNodes: [AVAudioPlayerNode] = []
     private var sequence: PlaybackSequence?
     private var trackInstruments: [Instrument] = []
@@ -76,23 +77,25 @@ public final class PlaybackEngine: ObservableObject {
     /// トラックごとの最長イベント拍数(emitCursor の走査窓の下限計算用)。
     private var maxDurBeats: [Double] = []
 
-    // MARK: - Buffer prefetch (バッファ生成の先読み)
-
-    /// makeBuffer のイベント単位の加工(トリム+ゲイン+フェード)は重いため、
-    /// スケジュール窓の先を専用キューで先読みしておき、メインスレッドでは
-    /// 参照とスケジュールだけを行う。バッファ内容は再生位置に依存しないので
-    /// シークしても有効なまま(速度変更と曲変更でのみ無効化する)。
-    private struct PrepKey: Hashable { let track: Int; let event: Int }
+    // Decode and shape audio away from UI work. Each transport change cancels
+    // pending work before it can enqueue buffers on a new player timeline.
     private let prepQueue = DispatchQueue(label: "jp.porari.abcstudio.bufferprep",
                                           qos: .userInitiated)
     private let prepLock = NSLock()
-    private var preparedBuffers: [PrepKey: AVAudioPCMBuffer] = [:]
-    private var preparedBytes = 0
     private var prepGeneration = 0
-    private var prepInFlight = false      // メインスレッドのみから読み書き
-    /// スケジュール窓の先にどれだけ準備するか(実時間秒)
-    private let prefetchAheadSec: TimeInterval = 16
-    private let prefetchMaxBytes = 120 * 1024 * 1024
+    private var prepInFlight = false
+    private var starting = false
+    private let startupSec: TimeInterval = 0.5
+    private let preparationBatchSec: TimeInterval = 1
+
+    private struct BufferRequest {
+        let track: Int
+        let event: PlaybackEvent
+        let instrument: Instrument
+        let seconds: Double
+        let offset: Double
+        let elapsed: Double
+    }
 
     private static let sampleRate = SoundFontPlayer.sampleRate
     private static let hostTicksPerSecond: Double = {
@@ -104,8 +107,10 @@ public final class PlaybackEngine: ObservableObject {
     public init() {}
 
     /// Allows scheduling to be observed without depending on audio output latency.
-    init(makePlayerNode: @escaping () -> AVAudioPlayerNode) {
+    init(makePlayerNode: @escaping () -> AVAudioPlayerNode,
+         makeBuffer: ((String, Int, TimeInterval, Double) -> AVAudioPCMBuffer?)? = nil) {
         self.makePlayerNode = makePlayerNode
+        self.makeBufferOverride = makeBuffer
     }
 
     deinit {
@@ -163,7 +168,6 @@ public final class PlaybackEngine: ObservableObject {
         schedHorizon = 0
         maxDurBeats = sequence.tracks.map { $0.events.map(\.durationBeats).max() ?? 0 }
         invalidatePrepared()
-        kickPrefetch()   // 再生開始を待たずに冒頭のバッファを先読みする
     }
 
     /// 読み込み失敗時に旧曲の再生状態を完全に破棄する。
@@ -237,8 +241,6 @@ public final class PlaybackEngine: ObservableObject {
         haltNodes()   // 自然終了直後の余韻バッファなど、残っている queue を掃除
         scheduleEvents(fromBeat: positionBeat)
         isPlaying = true
-        startTimer()
-        kickPrefetch()
     }
 
     public func pause() {
@@ -258,7 +260,6 @@ public final class PlaybackEngine: ObservableObject {
         stopTimer()
         emitCursor(at: positionBeat)
         releaseAudio()
-        kickPrefetch()   // 再開位置の先を先読みしておく
     }
 
     /// Reset to 0.
@@ -284,7 +285,6 @@ public final class PlaybackEngine: ObservableObject {
             scheduleEvents(fromBeat: beat)
         }
         emitCursor(at: beat)
-        kickPrefetch()
     }
 
     /// 楽譜上の音符(要素ID)の位置へシークする。再生中・停止中の両方で動作。
@@ -302,11 +302,9 @@ public final class PlaybackEngine: ObservableObject {
     /// 50...200, preserves position (reschedules while playing).
     public func setSpeed(_ percent: Int) {
         let nextSpeed = min(200, max(50, percent))
-        // バッファ長は速度依存なので先読み済みのものは全て作り直し
-        invalidatePrepared()
+        guard nextSpeed != speedPercent else { return }
         guard isPlaying else {
             speedPercent = nextSpeed
-            kickPrefetch()
             return
         }
         let beat = currentBeat() // 変更前の速度で再生位置を確定する
@@ -314,7 +312,6 @@ public final class PlaybackEngine: ObservableObject {
         positionBeat = beat
         haltNodes()
         scheduleEvents(fromBeat: beat)
-        kickPrefetch()
     }
 
     // MARK: - Tempo map (piecewise-linear beats ↔ seconds at speed 100)
@@ -329,111 +326,131 @@ public final class PlaybackEngine: ObservableObject {
 
     // MARK: - Scheduling (lookahead window)
 
-    /// (Re)starts scheduling at `beat`: slices overlapping events, then fills
-    /// only the lookahead window; `timerTick` tops the window up as it slides.
+    /// Only prepare the first half-second before starting. Later windows are built
+    /// asynchronously, keeping play, seek and speed changes responsive.
     private func scheduleEvents(fromBeat beat: Double) {
         guard let seq = sequence else { return }
-        let rate = Double(speedPercent) / 100
+        stopTimer()
+        starting = true
+        positionBeat = beat
         startSec100 = seconds(forBeat: beat)
-        schedHorizon = startSec100 + lookaheadSec * rate
-        // stop() resets every player timeline to sample zero. Queue the initial
-        // buffers before starting any node, since decoding can exceed leadIn.
-        schedIdx = []
-        for (index, track) in seq.tracks.enumerated() {
-            var k = 0
-            // events are emitted in start order; skip everything fully past.
-            while k < track.events.count
-                    && track.events[k].startBeat + track.events[k].durationBeats <= beat {
-                k += 1
-            }
-            // Events overlapping the position: play the remaining subrange.
-            while k < track.events.count && track.events[k].startBeat < beat {
-                schedule(track.events[k], track: index, eventIndex: k, tailOf: beat)
-                k += 1
-            }
-            // Fill the lookahead window.
-            while k < track.events.count
-                    && seconds(forBeat: track.events[k].startBeat) < schedHorizon {
-                schedule(track.events[k], track: index, eventIndex: k, tailOf: nil)
-                k += 1
-            }
-            schedIdx.append(k)
+        schedHorizon = startSec100
+        schedIdx = seq.tracks.map { track in
+            track.events.firstIndex {
+                $0.startBeat + $0.durationBeats > beat
+            } ?? track.events.count
         }
-        // All tracks share the same zero, including tracks whose first note is
-        // a rest. Later lookahead batches retain these absolute sample times.
-        anchorUptime = ProcessInfo.processInfo.systemUptime + leadIn
-        let startTime = AVAudioTime(hostTime: mach_absolute_time()
-                                   &+ UInt64(leadIn * Self.hostTicksPerSecond))
-        for node in playerNodes { node.play(at: startTime) }
+        prepareWindow(until: startSec100 + startupSec * Double(speedPercent) / 100,
+                      startPlayback: true)
     }
 
-    /// 再生中にタイマーから呼ばれ、lookahead 窓の先までイベントを追加する。
     private func topUp() {
-        guard let seq = sequence else { return }
+        guard !starting, !prepInFlight else { return }
         let rate = Double(speedPercent) / 100
         let horizon = seconds(forBeat: currentBeat()) + lookaheadSec * rate
         guard horizon > schedHorizon else { return }
-        schedHorizon = horizon
-        for (index, track) in seq.tracks.enumerated() where index < schedIdx.count {
+        // Grow the lookahead in small batches so seeks can cancel promptly and
+        // the next imminent notes are ready before distant notes are decoded.
+        prepareWindow(until: min(horizon, schedHorizon + preparationBatchSec * rate),
+                      startPlayback: false)
+    }
+
+    private func prepareWindow(until horizon: Double, startPlayback: Bool) {
+        guard let seq = sequence, !prepInFlight else { return }
+        let rate = Double(speedPercent) / 100
+        var requests: [BufferRequest] = []
+        for (index, track) in seq.tracks.enumerated() {
             var k = schedIdx[index]
-            while k < track.events.count
-                    && seconds(forBeat: track.events[k].startBeat) < horizon {
-                schedule(track.events[k], track: index, eventIndex: k, tailOf: nil)
+            while k < track.events.count,
+                  seconds(forBeat: track.events[k].startBeat) < horizon {
+                let event = track.events[k]
+                let start = seconds(forBeat: event.startBeat)
+                requests.append(BufferRequest(
+                    track: index, event: event, instrument: trackInstruments[index],
+                    seconds: (seconds(forBeat: event.startBeat + event.durationBeats) - start) / rate,
+                    offset: max(0, (start - startSec100) / rate),
+                    elapsed: max(0, (startSec100 - start) / rate)))
                 k += 1
             }
             schedIdx[index] = k
         }
-        kickPrefetch()
-    }
-
-    /// Schedules one event on its track's player node. `tailOf` is set when the
-    /// event started before the play position — only its remaining part plays.
-    /// バッファは先読み済みのものを優先し、ミス時のみこの場で生成する。
-    private func schedule(_ event: PlaybackEvent, track index: Int, eventIndex: Int,
-                          tailOf beat: Double?) {
-        guard index < playerNodes.count, index < trackInstruments.count else { return }
-        let rate = Double(speedPercent) / 100
-        let instrument = trackInstruments[index]
-        let endBeat = event.startBeat + event.durationBeats
-        let offsetSec = (seconds(forBeat: event.startBeat) - startSec100) / rate
-        let eventSec = (seconds(forBeat: endBeat) - seconds(forBeat: event.startBeat)) / rate
-        let prepKey = PrepKey(track: index, event: eventIndex)
-        prepLock.lock()
-        let prepared = preparedBuffers.removeValue(forKey: prepKey)
-        if let prepared {
-            preparedBytes -= Int(prepared.frameCapacity) * Int(prepared.format.channelCount) * MemoryLayout<Float>.size
-        }
-        prepLock.unlock()
-        guard let buffer = prepared ?? soundFont.makeBuffer(dir: instrument.soundFontDir,
-                                                          midi: instrument.soundingNote(event.midi),
-                                                          seconds: eventSec,
-                                                          velocity: event.velocity) else {
-            return    // missing soundfont → skip this event's audio
-        }
-        let time = AVAudioTime(
-            sampleTime: AVAudioFramePosition((max(0, offsetSec) * Self.sampleRate).rounded()),
-            atRate: Self.sampleRate)
-        if let beat = beat, event.startBeat < beat {
-            // Event overlaps the position: play the remaining subrange.
-            // (AVAudioPlayerNode has no buffer-based scheduleSegment, so
-            // we slice off the elapsed head ourselves.)
-            let elapsedSec = (startSec100 - seconds(forBeat: event.startBeat)) / rate
-            let startFrame = AVAudioFramePosition((elapsedSec * Self.sampleRate).rounded())
-            guard startFrame >= 0, startFrame < AVAudioFramePosition(buffer.frameLength),
-                  let tail = subBuffer(buffer, from: startFrame) else {
-                return
+        requests.sort { $0.offset < $1.offset }
+        schedHorizon = horizon
+        prepInFlight = true
+        let generation = prepGeneration
+        let trackCount = playerNodes.count
+        prepQueue.async { [weak self] in
+            guard let self else { return }
+            var buffers: [(Int, AVAudioPCMBuffer, AVAudioTime)] = []
+            if startPlayback {
+                let audibleTracks = Set(requests.map(\.track))
+                // Give resting tracks a timeline before play(at:), even when
+                // their first real note lies beyond the startup window.
+                for track in 0..<trackCount where !audibleTracks.contains(track) {
+                    if let silence = AVAudioPCMBuffer(pcmFormat: self.soundFont.format,
+                                                       frameCapacity: 1) {
+                        silence.frameLength = 1
+                        for channel in 0..<Int(silence.format.channelCount) {
+                            silence.floatChannelData![channel][0] = 0
+                        }
+                        buffers.append((track, silence,
+                                        AVAudioTime(sampleTime: 0, atRate: Self.sampleRate)))
+                    }
+                }
             }
-            playerNodes[index].scheduleBuffer(tail, at: time, options: [],
-                                              completionHandler: nil)
-        } else {
-            playerNodes[index].scheduleBuffer(buffer, at: time, options: [],
-                                              completionHandler: nil)
+            for request in requests {
+                self.prepLock.lock()
+                let stale = self.prepGeneration != generation
+                self.prepLock.unlock()
+                if stale { return }
+                let inst = request.instrument
+                let generated: AVAudioPCMBuffer?
+                if let makeBuffer = self.makeBufferOverride {
+                    generated = makeBuffer(inst.soundFontDir, inst.soundingNote(request.event.midi),
+                                           request.seconds, request.event.velocity)
+                } else {
+                    generated = self.soundFont.makeBuffer(
+                        dir: inst.soundFontDir, midi: inst.soundingNote(request.event.midi),
+                        seconds: request.seconds, velocity: request.event.velocity)
+                }
+                guard var buffer = generated else { continue }
+                if request.elapsed > 0 {
+                    let frame = AVAudioFramePosition((request.elapsed * Self.sampleRate).rounded())
+                    guard let tail = self.subBuffer(buffer, from: frame) else { continue }
+                    buffer = tail
+                }
+                let time = AVAudioTime(
+                    sampleTime: AVAudioFramePosition((request.offset * Self.sampleRate).rounded()),
+                    atRate: Self.sampleRate)
+                buffers.append((request.track, buffer, time))
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.prepGeneration == generation, self.isPlaying else { return }
+                self.prepInFlight = false
+                for (track, buffer, time) in buffers {
+                    self.playerNodes[track].scheduleBuffer(buffer, at: time, options: [],
+                                                           completionHandler: nil)
+                }
+                if startPlayback {
+                    self.anchorUptime = ProcessInfo.processInfo.systemUptime + self.leadIn
+                    let start = AVAudioTime(hostTime: mach_absolute_time()
+                        &+ UInt64(self.leadIn * Self.hostTicksPerSecond))
+                    for node in self.playerNodes { node.play(at: start) }
+                    self.starting = false
+                    self.startTimer()
+                }
+                // Continue filling without waiting for a UI timer tick.
+                // A small tolerance prevents chasing a moving horizon forever.
+                let target = self.seconds(forBeat: self.currentBeat()) + self.lookaheadSec * rate
+                if self.schedHorizon + 0.25 * rate < target { self.topUp() }
+            }
         }
     }
 
     /// Current playhead position in beats, from the player node's audio timeline
     /// (falling back to the wall clock if the render timeline isn't up yet).
     private func currentBeat() -> Double {
+        if starting { return positionBeat }
         var elapsed = ProcessInfo.processInfo.systemUptime - anchorUptime
         if let node = playerNodes.first,
            let renderTime = node.lastRenderTime,
@@ -476,7 +493,6 @@ public final class PlaybackEngine: ObservableObject {
                 scheduleEvents(fromBeat: 0)
                 progress = 0
                 emitCursor(at: nil)
-                kickPrefetch()
                 return
             }
             // 自然終了: 最終音のバッファ末尾(サステイン+フェード+リバーブ)を
@@ -562,83 +578,18 @@ public final class PlaybackEngine: ObservableObject {
         return out
     }
 
-    // MARK: - Buffer prefetch implementation
-
-    /// スケジュール窓の先(停止中は再開位置の先)のバッファをバックグラウンドで用意する。
-    /// メインスレッドでのみ呼ぶこと(prepInFlight / schedHorizon / positionBeat を読む)。
-    private func kickPrefetch() {
-        guard !prepInFlight, let seq = sequence else { return }
-        prepInFlight = true
-        let gen = prepGeneration
-        let rate = Double(speedPercent) / 100
-        // 再生中はスケジュール窓の末端から、停止中は再開位置から先読みする
-        let head = isPlaying ? schedHorizon : seconds(forBeat: positionBeat)
-        let limit = head + prefetchAheadSec * rate
-        let instruments = trackInstruments
-        prepQueue.async { [weak self] in
-            guard let self else { return }
-            defer { DispatchQueue.main.async { [weak self] in self?.prepInFlight = false } }
-            var batch: [(PrepKey, AVAudioPCMBuffer)] = []
-            for (ti, track) in seq.tracks.enumerated() {
-                guard ti < instruments.count else { continue }
-                let inst = instruments[ti]
-                var k = track.events.lowerBound {
-                    seq.seconds(forBeat: $0.startBeat) >= head
-                }
-                while k < track.events.count {
-                    let e = track.events[k]
-                    if seq.seconds(forBeat: e.startBeat) >= limit { break }
-                    self.prepLock.lock()
-                    let stale = self.prepGeneration != gen
-                    let have = self.preparedBuffers[PrepKey(track: ti, event: k)] != nil
-                    let full = self.preparedBytes >= self.prefetchMaxBytes
-                    self.prepLock.unlock()
-                    if stale || full { return }
-                    if !have {
-                        let sec = (seq.seconds(forBeat: e.startBeat + e.durationBeats)
-                                   - seq.seconds(forBeat: e.startBeat)) / rate
-                        if let buf = self.soundFont.makeBuffer(dir: inst.soundFontDir,
-                                                               midi: inst.soundingNote(e.midi), seconds: sec,
-                                                               velocity: e.velocity) {
-                            batch.append((PrepKey(track: ti, event: k), buf))
-                        }
-                    }
-                    k += 1
-                    if batch.count >= 24 { self.flushPrep(&batch, gen: gen) }
-                }
-            }
-            self.flushPrep(&batch, gen: gen)
-        }
-    }
-
-    /// 生成済みバッファをまとめて辞書へ流す(ロック回数を減らすためバッチ)。
-    private func flushPrep(_ batch: inout [(PrepKey, AVAudioPCMBuffer)], gen: Int) {
-        guard !batch.isEmpty else { return }
-        prepLock.lock()
-        if gen == prepGeneration {
-            for (key, buf) in batch {
-                preparedBuffers[key] = buf
-                preparedBytes += Int(buf.frameCapacity) * Int(buf.format.channelCount)
-                    * MemoryLayout<Float>.size
-            }
-        }
-        prepLock.unlock()
-        batch.removeAll(keepingCapacity: true)
-    }
-
-    /// 曲変更・速度変更で先読みバッファを無効化する。
-    /// generation を進めることで処理中のワーカーも途中で止まる。
     private func invalidatePrepared() {
         prepLock.lock()
         prepGeneration += 1
-        preparedBuffers.removeAll()
-        preparedBytes = 0
         prepLock.unlock()
+        prepInFlight = false
+        starting = false
     }
 
     // MARK: - Engine plumbing
 
     private func haltNodes() {
+        invalidatePrepared()
         for node in playerNodes { node.stop() }   // clears pending buffers
     }
 

@@ -1,9 +1,15 @@
 import XCTest
 import AVFoundation
+import Combine
 @testable import ABCStudio
 
 /// パーサー/ビーム/シーケンサー/MIDI/楽器推測のユニットテスト
 final class ABCStudioTests: XCTestCase {
+
+    private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 5) {
+        let ready = expectation(for: NSPredicate { _, _ in condition() }, evaluatedWith: nil)
+        wait(for: [ready], timeout: timeout)
+    }
 
     private func parse(_ src: String) -> ABCBook {
         ABCBeaming.apply(to: ABCParser.parse(src))
@@ -247,6 +253,60 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertLessThan(after - before, 0.004, "速度変更で再生位置が飛ばない")
     }
 
+    func testCursorTicksDoNotInvalidateMixerAndDuplicateTicksAreIgnored() {
+        let model = StudioModel()
+        var screenChanges = 0
+        var cursorChanges = 0
+        let screenObserver = model.objectWillChange.sink { screenChanges += 1 }
+        let cursorObserver = model.playbackCursor.objectWillChange.sink { cursorChanges += 1 }
+        model.engine.onCursor?([1, 2], 1)
+        XCTAssertEqual(screenChanges, 0, "音符の更新でミキサーやタブ全体を再描画しない")
+        XCTAssertEqual(cursorChanges, 2)
+        model.engine.onCursor?([1, 2], 1)
+        XCTAssertEqual(cursorChanges, 2, "同じ音符の30Hz更新を重複通知しない")
+        withExtendedLifetime((screenObserver, cursorObserver)) {}
+    }
+
+    func testSlowAudioPreparationDoesNotBlockTransportOrScheduleCancelledRun() {
+        let node = RecordingPlayerNode()
+        let entered = expectation(description: "音声の準備開始")
+        let gate = DispatchSemaphore(value: 0)
+        let format = AVAudioFormat(standardFormatWithSampleRate: SoundFontPlayer.sampleRate,
+                                   channels: 2)!
+        var first = true // accessed only on the serial preparation queue
+        let engine = PlaybackEngine(makePlayerNode: { node }, makeBuffer: { _, _, _, _ in
+            XCTAssertFalse(Thread.isMainThread, "デコード・ゲイン加工はUIスレッドで実行しない")
+            if first {
+                first = false
+                entered.fulfill()
+                _ = gate.wait(timeout: .now() + 5)
+            }
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4410)!
+            buffer.frameLength = buffer.frameCapacity
+            for channel in 0..<2 {
+                buffer.floatChannelData![channel].initialize(repeating: 0, count: 4410)
+            }
+            return buffer
+        })
+        engine.load(seq("X:1\nM:4/4\nL:1/4\nQ:1/4=120\nK:C\nC D E F | G A B c |"), instruments: [:])
+        engine.setMasterVolume(0)
+        defer { gate.signal(); engine.stop() }
+        engine.play()
+        wait(for: [entered], timeout: 2)
+        XCTAssertTrue(node.starts.isEmpty)
+        // These operations must return even while the decoder is blocked.
+        engine.seek(toFraction: 0.5)
+        engine.setSpeed(150)
+        engine.stop()
+        gate.signal()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertTrue(node.starts.isEmpty, "取り消した再生・シークの結果を適用しない")
+        XCTAssertTrue(node.scheduledTimes.isEmpty)
+        engine.play()
+        waitUntil { !node.starts.isEmpty }
+        XCTAssertEqual(node.starts.count, 1)
+    }
+
     func testTracksShareClockWhenLookaheadSchedulesLaterNotes() throws {
         var nodes: [RecordingPlayerNode] = []
         let engine = PlaybackEngine(makePlayerNode: {
@@ -275,7 +335,7 @@ final class ABCStudioTests: XCTestCase {
             }
         }
         engine.play()
-        XCTAssertEqual(nodes.map { $0.scheduledTimes.count }, [3, 1], "最初は12秒までを予約する")
+        XCTAssertTrue(nodes.allSatisfy { $0.starts.isEmpty }, "再生操作はデコードを待たずに戻る")
         wait(for: [toppedUp], timeout: 5)
         let start = try XCTUnwrap(nodes.first?.starts.first)
         XCTAssertTrue(start.isHostTimeValid)
@@ -284,8 +344,9 @@ final class ABCStudioTests: XCTestCase {
             XCTAssertEqual(node.starts.first?.hostTime, start.hostTime,
                            "冒頭に休符があるパートも同じ時刻から開始する")
             XCTAssertTrue(node.initialBuffersPrecedeStart)
-            XCTAssertEqual(node.scheduledTimes.count, tracks[index].events.count)
-            for (time, event) in zip(node.scheduledTimes, tracks[index].events) {
+            let silenceCount = index == 1 ? 1 : 0
+            XCTAssertEqual(node.scheduledTimes.count, tracks[index].events.count + silenceCount)
+            for (time, event) in zip(node.scheduledTimes.dropFirst(silenceCount), tracks[index].events) {
                 XCTAssertTrue(time.isSampleTimeValid)
                 XCTAssertEqual(time.sampleTime,
                                AVAudioFramePosition(event.startBeat * 0.5 * SoundFontPlayer.sampleRate),
@@ -296,12 +357,21 @@ final class ABCStudioTests: XCTestCase {
         // A seek, speed change and resume must each establish a shared new zero.
         nodes.forEach { $0.onSchedule = nil }
         engine.seek(toFraction: 0.5) // beat 16 = 8 seconds
+        waitUntil { nodes.allSatisfy { $0.starts.count == 2 && $0.scheduledTimes.last?.sampleTime == AVAudioFramePosition(4.25 * SoundFontPlayer.sampleRate) } }
         XCTAssertEqual(nodes.map { $0.scheduledTimes.last?.sampleTime },
                        Array(repeating: AVAudioFramePosition(4.25 * SoundFontPlayer.sampleRate), count: 2))
         engine.setSpeed(200)
+        waitUntil {
+            nodes.allSatisfy {
+                guard let frame = $0.scheduledTimes.last?.sampleTime else { return false }
+                return $0.starts.count == 3 && frame > 0
+                    && frame < AVAudioFramePosition(4.25 * SoundFontPlayer.sampleRate)
+            }
+        }
         XCTAssertEqual(nodes[0].scheduledTimes.last?.sampleTime, nodes[1].scheduledTimes.last?.sampleTime)
         engine.pause()
         engine.play()
+        waitUntil { nodes.allSatisfy { $0.starts.count == 4 } }
         XCTAssertEqual(nodes[0].starts.count, 4)
         XCTAssertEqual(nodes[0].starts.map(\.hostTime), nodes[1].starts.map(\.hostTime))
         XCTAssertEqual(nodes[0].scheduledTimes.last?.sampleTime, nodes[1].scheduledTimes.last?.sampleTime)

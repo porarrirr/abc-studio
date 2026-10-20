@@ -48,7 +48,6 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
     @State private var tab: StudioTab = .score
-    @State private var seekDrag: Double?
     @State private var speedDrag: Double?
     @State private var showAbout = false
     @State private var showPlaybackSettings = false
@@ -339,9 +338,9 @@ struct ContentView: View {
             }
 
             if let tune = model.tune {
-                ScoreView(tune: tune, highlight: model.highlight, cursorID: model.cursorID,
-                          isPlaying: model.engine.isPlaying, zoom: $scoreZoom, followEnabled: followEnabled,
-                          onTapNote: { model.seekToElement($0) })
+                PlaybackScore(tune: tune, cursor: model.playbackCursor,
+                              isPlaying: model.engine.isPlaying, zoom: $scoreZoom,
+                              followEnabled: followEnabled, onTapNote: { model.seekToElement($0) })
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line.opacity(0.8)))
                     .padding(.horizontal, isCompact ? 12 : 28)
@@ -701,78 +700,9 @@ struct ContentView: View {
 
     // MARK: Player
 
-    @ViewBuilder private var playerBar: some View {
-        if isShort { compactPlayerBar } else { fullPlayerBar }
-    }
-
-    private var compactPlayerBar: some View {
-        HStack(spacing: 16) {
-            Button { model.togglePlay() } label: {
-                Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 44, height: 44).background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 14))
-            }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
-            Button { model.stopPlayback() } label: {
-                Image(systemName: "stop.fill").frame(width: 44, height: 44)
-            }.accessibilityLabel("停止").disabled(model.tune == nil)
-            Text(model.status).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
-            Text(model.currentTimeText).font(.system(size: 10, design: .monospaced))
-            Slider(value: Binding(get: { seekDrag ?? model.engine.progress }, set: { seekDrag = $0 }), in: 0...1,
-                   onEditingChanged: { editing in
-                       if !editing, let value = seekDrag { model.seek(to: value) }
-                       if !editing { seekDrag = nil }
-                   }).accessibilityLabel("再生位置").disabled(model.tune == nil)
-            Text(model.totalTimeText).font(.system(size: 10, design: .monospaced))
-            Button { showPlaybackSettings = true } label: {
-                Text("\(model.speed)%").font(.system(size: 12, weight: .semibold)).frame(minWidth: 50, minHeight: 44)
-            }.accessibilityLabel("再生設定").accessibilityValue("速度 \(model.speed)%")
-        }
-        .padding(.horizontal, 22).padding(.vertical, 6)
-        .background(StudioTheme.surface).overlay(alignment: .top) { Divider() }
-    }
-
-    private var fullPlayerBar: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    HStack(spacing: 5) {
-                        Circle().fill(model.engine.isPlaying ? StudioTheme.accent : StudioTheme.secondary.opacity(0.6)).frame(width: 5, height: 5)
-                        Text(model.status).font(.system(size: 10)).foregroundStyle(StudioTheme.secondary).lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                Button { showPlaybackSettings = true } label: {
-                    Text("\(model.speed)%").font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(StudioTheme.accent).frame(minWidth: 48, minHeight: 44)
-                        .background(StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
-                }.accessibilityLabel("再生設定").accessibilityValue("速度 \(model.speed)%")
-                Button { model.stopPlayback() } label: {
-                    Image(systemName: "stop.fill").font(.system(size: 15)).foregroundStyle(StudioTheme.secondary).frame(width: 44, height: 48)
-                }.accessibilityLabel("停止").disabled(model.tune == nil)
-                Button { model.togglePlay() } label: {
-                    Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
-                        .frame(width: 50, height: 50)
-                        .background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 17))
-                }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
-            }
-            HStack(spacing: 10) {
-                Text(model.currentTimeText).frame(width: 32, alignment: .leading)
-                Slider(value: Binding(get: { seekDrag ?? model.engine.progress }, set: { seekDrag = $0 }), in: 0...1,
-                       onEditingChanged: { editing in
-                           if !editing, let value = seekDrag { model.seek(to: value) }
-                           if !editing { seekDrag = nil }
-                       })
-                    .accessibilityLabel("再生位置").disabled(model.tune == nil)
-                Text(model.totalTimeText).frame(width: 32, alignment: .trailing)
-            }
-            .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
-        }
-        .padding(.horizontal, isCompact ? 22 : 28).padding(.top, 12).padding(.bottom, 2)
-        .frame(maxWidth: 1000).frame(maxWidth: .infinity)
-        .background(StudioTheme.surface)
-        .overlay(alignment: .top) { Divider().overlay(StudioTheme.line) }
+    private var playerBar: some View {
+        PlaybackBar(model: model, engine: model.engine, isCompact: isCompact,
+                    isShort: isShort, showPlaybackSettings: $showPlaybackSettings)
     }
 
     private var playbackSettings: some View {
@@ -1029,5 +959,105 @@ private struct AboutView: View {
                 }
             }
         }
+    }
+}
+
+/// Transport progress updates must not rebuild the mixer or navigation tabs.
+private struct PlaybackBar: View {
+    @ObservedObject var model: StudioModel
+    @ObservedObject var engine: PlaybackEngine
+    let isCompact: Bool
+    let isShort: Bool
+    @Binding var showPlaybackSettings: Bool
+    @State private var seekDrag: Double?
+
+    @ViewBuilder var body: some View {
+        if isShort { compactPlayerBar } else { fullPlayerBar }
+    }
+
+    private var compactPlayerBar: some View {
+        HStack(spacing: 16) {
+            Button { model.togglePlay() } label: {
+                Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                    .frame(width: 44, height: 44).background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 14))
+            }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
+            Button { model.stopPlayback() } label: {
+                Image(systemName: "stop.fill").frame(width: 44, height: 44)
+            }.accessibilityLabel("停止").disabled(model.tune == nil)
+            Text(model.status).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+            Text(model.currentTimeText).font(.system(size: 10, design: .monospaced))
+            Slider(value: Binding(get: { seekDrag ?? model.engine.progress }, set: { seekDrag = $0 }), in: 0...1,
+                   onEditingChanged: { editing in
+                       if !editing, let value = seekDrag { model.seek(to: value) }
+                       if !editing { seekDrag = nil }
+                   }).accessibilityLabel("再生位置").disabled(model.tune == nil)
+            Text(model.totalTimeText).font(.system(size: 10, design: .monospaced))
+            Button { showPlaybackSettings = true } label: {
+                Text("\(model.speed)%").font(.system(size: 12, weight: .semibold)).frame(minWidth: 50, minHeight: 44)
+            }.accessibilityLabel("再生設定").accessibilityValue("速度 \(model.speed)%")
+        }
+        .padding(.horizontal, 22).padding(.vertical, 6)
+        .background(StudioTheme.surface).overlay(alignment: .top) { Divider() }
+    }
+
+    private var fullPlayerBar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    HStack(spacing: 5) {
+                        Circle().fill(model.engine.isPlaying ? StudioTheme.accent : StudioTheme.secondary.opacity(0.6)).frame(width: 5, height: 5)
+                        Text(model.status).font(.system(size: 10)).foregroundStyle(StudioTheme.secondary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                Button { showPlaybackSettings = true } label: {
+                    Text("\(model.speed)%").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(StudioTheme.accent).frame(minWidth: 48, minHeight: 44)
+                        .background(StudioTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                }.accessibilityLabel("再生設定").accessibilityValue("速度 \(model.speed)%")
+                Button { model.stopPlayback() } label: {
+                    Image(systemName: "stop.fill").font(.system(size: 15)).foregroundStyle(StudioTheme.secondary).frame(width: 44, height: 48)
+                }.accessibilityLabel("停止").disabled(model.tune == nil)
+                Button { model.togglePlay() } label: {
+                    Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 50, height: 50)
+                        .background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 17))
+                }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
+            }
+            HStack(spacing: 10) {
+                Text(model.currentTimeText).frame(width: 32, alignment: .leading)
+                Slider(value: Binding(get: { seekDrag ?? model.engine.progress }, set: { seekDrag = $0 }), in: 0...1,
+                       onEditingChanged: { editing in
+                           if !editing, let value = seekDrag { model.seek(to: value) }
+                           if !editing { seekDrag = nil }
+                       })
+                    .accessibilityLabel("再生位置").disabled(model.tune == nil)
+                Text(model.totalTimeText).frame(width: 32, alignment: .trailing)
+            }
+            .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
+        }
+        .padding(.horizontal, isCompact ? 22 : 28).padding(.top, 12).padding(.bottom, 2)
+        .frame(maxWidth: 1000).frame(maxWidth: .infinity)
+        .background(StudioTheme.surface)
+        .overlay(alignment: .top) { Divider().overlay(StudioTheme.line) }
+    }
+
+}
+
+private struct PlaybackScore: View {
+    let tune: ABCTune
+    @ObservedObject var cursor: PlaybackCursor
+    let isPlaying: Bool
+    @Binding var zoom: Double
+    let followEnabled: Bool
+    let onTapNote: (Int) -> Void
+
+    var body: some View {
+        ScoreView(tune: tune, highlight: cursor.highlight, cursorID: cursor.elementID,
+                  isPlaying: isPlaying, zoom: $zoom, followEnabled: followEnabled,
+                  onTapNote: onTapNote)
     }
 }

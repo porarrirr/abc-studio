@@ -9,6 +9,12 @@ struct ShareFile: Identifiable {
     var id: URL { url }
 }
 
+/// Cursor changes are observed by the score alone, rather than every tab.
+final class PlaybackCursor: ObservableObject {
+    @Published var highlight: Set<Int> = []
+    @Published var elementID: Int?
+}
+
 /// アプリ全体の状態。ABCソースのパース・音色割当・再生・入出力をまとめる。
 final class StudioModel: ObservableObject {
     @Published var source: String = ""
@@ -18,8 +24,15 @@ final class StudioModel: ObservableObject {
     @Published var diagnostics: [ABCDiagnostic] = []
     /// voiceID → Instrument.id
     @Published var assignments: [String: String] = [:]
-    @Published var highlight: Set<Int> = []
-    @Published var cursorID: Int?
+    let playbackCursor = PlaybackCursor()
+    var highlight: Set<Int> {
+        get { playbackCursor.highlight }
+        set { if playbackCursor.highlight != newValue { playbackCursor.highlight = newValue } }
+    }
+    var cursorID: Int? {
+        get { playbackCursor.elementID }
+        set { if playbackCursor.elementID != newValue { playbackCursor.elementID = newValue } }
+    }
     @Published var toastText: String?
     @Published var status = "準備完了"
     /// 再生速度(%)50-200
@@ -87,7 +100,7 @@ K:C
     }
 
     init() {
-        engineObserver = engine.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        engineObserver = engine.$isPlaying.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }
         engine.onCursor = { [weak self] ids, anchor in
             self?.highlight = ids
             self?.cursorID = anchor
