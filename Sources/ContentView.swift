@@ -48,6 +48,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
     @State private var tab: StudioTab = .score
+    @State private var visitedTabs: Set<StudioTab> = [.score]
     @State private var speedDrag: Double?
     @State private var showAbout = false
     @State private var showPlaybackSettings = false
@@ -64,7 +65,9 @@ struct ContentView: View {
     private let abcType = UTType("jp.porari.abc") ?? .plainText
     private var isCompact: Bool { hSize == .compact }
     private var isShort: Bool { vSize == .compact }
-    private var hasSource: Bool { !model.source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var hasSource: Bool {
+        model.source.unicodeScalars.contains { !CharacterSet.whitespacesAndNewlines.contains($0) }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -91,11 +94,19 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .overlay(alignment: .bottom) { toastOverlay }
         .overlay { if model.isRendering { renderingOverlay } }
+        .overlay(alignment: .top) {
+            if model.isOpening {
+                ProgressView("曲を準備中")
+                    .padding(12).background(.regularMaterial, in: Capsule())
+                    .padding(.top, 60).allowsHitTesting(false)
+                    .accessibilityIdentifier("document-opening")
+            }
+        }
         .fileImporter(isPresented: $model.showImporter,
                       allowedContentTypes: [abcType, .plainText], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):
-                if let url = urls.first { model.importFile(url); tab = .score }
+                if let url = urls.first { model.importFileForDisplay(url); tab = .score }
             case .failure(let error): model.importError = error.localizedDescription
             }
         }
@@ -143,7 +154,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
         }
-        .onChange(of: tab) { _, _ in dismissKeyboard() }
+        .onChange(of: tab) { _, selected in
+            visitedTabs.insert(selected)
+            dismissKeyboard()
+        }
         .focusable(tab == .score || tab == .mixer)
         .onKeyPress(.space) {
             guard tab == .score || tab == .mixer else { return .ignored }
@@ -180,7 +194,7 @@ struct ContentView: View {
                 if !model.samples.isEmpty {
                     Menu("サンプルを開く", systemImage: "music.note") {
                         ForEach(model.samples, id: \.url) { sample in
-                            Button(sample.name) { model.loadSample(sample.url); tab = .score }
+                            Button(sample.name) { model.loadSampleForDisplay(sample.url); tab = .score }
                         }
                     }
                 }
@@ -274,8 +288,23 @@ struct ContentView: View {
         .overlay(alignment: .top) { Divider().overlay(StudioTheme.line) }
     }
 
-    @ViewBuilder private var paneContent: some View {
-        switch tab {
+    private var paneContent: some View {
+        ZStack {
+            ForEach(StudioTab.allCases, id: \.rawValue) { item in
+                if visitedTabs.contains(item) || tab == item {
+                    pane(item)
+                        .opacity(tab == item ? 1 : 0)
+                        .allowsHitTesting(tab == item)
+                        .accessibilityHidden(tab != item)
+                        .disabled(tab != item)
+                        .zIndex(tab == item ? 1 : 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func pane(_ item: StudioTab) -> some View {
+        switch item {
         case .score: scorePane
         case .mixer: partsPane
         case .editor: sourcePane
@@ -329,7 +358,7 @@ struct ContentView: View {
             }
 
             if let book = model.book, book.tunes.count > 1 {
-                Picker("曲を選択", selection: Binding(get: { model.selectedTune }, set: { model.selectTune($0) })) {
+                Picker("曲を選択", selection: Binding(get: { model.selectedTune }, set: { model.selectTuneForDisplay($0) })) {
                     ForEach(book.tunes.indices, id: \.self) { i in
                         Text(book.tunes[i].title.isEmpty ? "曲 \(i + 1)" : book.tunes[i].title).tag(i)
                     }
@@ -340,7 +369,9 @@ struct ContentView: View {
             if let tune = model.tune {
                 PlaybackScore(tune: tune, cursor: model.playbackCursor,
                               isPlaying: model.engine.isPlaying, zoom: $scoreZoom,
-                              followEnabled: followEnabled, onTapNote: { model.seekToElement($0) })
+                              followEnabled: followEnabled, isActive: tab == .score,
+                              onTapNote: { model.seekToElement($0) })
+                    .allowsHitTesting(!model.isOpening)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line.opacity(0.8)))
                     .padding(.horizontal, isCompact ? 12 : 28)
@@ -438,62 +469,12 @@ struct ContentView: View {
     }
 
     private func partRow(voice: ABCVoice, index: Int) -> some View {
-        let instrument = Instruments.byID(model.assignments[voice.id] ?? "") ?? Instruments.all[0]
-        let muted = model.mutedVoices.contains(voice.id)
-        let soloed = model.soloVoiceID == voice.id
-        let percent = Int((model.partVolume(for: voice.id) * 100).rounded())
-        let color = StudioTheme.trackColors[index % StudioTheme.trackColors.count]
-        return VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                Text(String(format: "%02d", index + 1))
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundStyle(color).frame(width: 44, height: 44)
-                    .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(voice.name).font(.system(size: 16, weight: .semibold))
-                    Text(instrument.category).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
-                }.opacity(muted ? 0.45 : 1)
-                Spacer(minLength: 0)
-                Button { model.toggleSolo(voice.id) } label: {
-                    Text("ソロ").font(.system(size: 11, weight: .semibold))
-                        .frame(width: 44, height: 44)
-                        .foregroundStyle(soloed ? .white : StudioTheme.secondary)
-                        .background(soloed ? color : StudioTheme.background, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .accessibilityLabel(voice.name + "をソロ再生").accessibilityValue(soloed ? "オン" : "オフ")
-                Button { model.toggleMute(voice.id) } label: {
-                    Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
-                        .font(.system(size: 15)).frame(width: 44, height: 44)
-                        .foregroundStyle(muted ? StudioTheme.danger : StudioTheme.secondary)
-                        .background(muted ? StudioTheme.danger.opacity(0.09) : StudioTheme.background, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .accessibilityLabel(voice.name + "をミュート").accessibilityValue(muted ? "オン" : "オフ")
-            }
-            HStack(spacing: 12) {
-                Slider(value: Binding(get: { model.partVolume(for: voice.id) },
-                                      set: { model.setPartVolume(voice.id, volume: $0) }), in: 0...1)
-                    .tint(color).accessibilityLabel(voice.name + "の音量")
-                    .accessibilityValue("\(percent)%").accessibilityIdentifier("part-volume-\(voice.id)")
-                Text("\(percent)%").font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(StudioTheme.secondary).frame(width: 42, alignment: .trailing).accessibilityHidden(true)
-            }
-            Divider()
-            HStack {
-                Text("音色").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
-                Spacer(minLength: 4)
-                Picker(voice.name + "の楽器", selection: Binding(
-                    get: { model.assignments[voice.id] ?? "piano" }, set: { model.assign(voice.id, instrument: $0) })) {
-                    ForEach(Instruments.categories, id: \.self) { category in
-                        Section(category) {
-                            ForEach(Instruments.all.filter { $0.category == category }, id: \.id) { inst in
-                                Text(inst.label).tag(inst.id)
-                            }
-                        }
-                    }
-                }
-                .pickerStyle(.menu).font(.system(size: 13, weight: .medium))
-            }
-        }.studioCard()
+        MixerPartRow(model: model, voice: voice, index: index,
+                     instrumentID: model.assignments[voice.id] ?? "piano",
+                     volume: model.partVolume(for: voice.id),
+                     muted: model.mutedVoices.contains(voice.id),
+                     soloed: model.soloVoiceID == voice.id)
+            .equatable()
     }
 
     // MARK: Editor
@@ -506,7 +487,7 @@ struct ContentView: View {
                     HStack(spacing: 8) {
                         Label("ABC ソース", systemImage: "doc.plaintext").font(.system(size: 12, weight: .semibold))
                         Spacer()
-                        Text("\(model.source.components(separatedBy: .newlines).count) 行")
+                        Text("\(model.sourceLineCount) 行")
                             .font(.system(size: 11, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
                         Menu {
                             Button { model.validateSource(); dismissKeyboard() } label: { Label("記譜を検証", systemImage: "checkmark.circle") }
@@ -518,7 +499,7 @@ struct ContentView: View {
                     .padding(.horizontal, 14).background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 12))
 
                     SourceEditor(text: Binding(get: { model.source }, set: { model.source = $0; model.scheduleValidation() }),
-                                 jumpToLine: $model.jumpToLine)
+                                 jumpToLine: $model.jumpToLine, isActive: tab == .editor)
                         .frame(height: max(keyboardVisible ? 180 : 260, geo.size.height - 310))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line))
@@ -528,10 +509,11 @@ struct ContentView: View {
                         Spacer(minLength: 0)
                         Button {
                             dismissKeyboard()
-                            model.applySource()
-                            if model.tune != nil && !model.diagnostics.contains(where: { $0.severity == .error }) { tab = .score }
+                            model.applySourceForDisplay { success in
+                                if success { tab = .score }
+                            }
                         } label: { Label("楽譜に反映", systemImage: "arrow.right") }
-                            .buttonStyle(StudioActionStyle()).disabled(!hasSource)
+                            .buttonStyle(StudioActionStyle()).disabled(!hasSource || model.isOpening)
                     }
                     if !model.diagnostics.isEmpty { diagnosticsPanel }
                     DisclosureGroup("ABC記譜法のヒント") {
@@ -627,7 +609,7 @@ struct ContentView: View {
                     }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
                         ForEach(Array(model.samples.enumerated()), id: \.element.url) { index, sample in
-                            Button { model.loadSample(sample.url); tab = .score } label: {
+                            Button { model.loadSampleForDisplay(sample.url); tab = .score } label: {
                                 VStack(alignment: .leading, spacing: 18) {
                                     Image(systemName: index.isMultiple(of: 2) ? "music.note" : "pianokeys")
                                         .font(.system(size: 24, weight: .light)).foregroundStyle(StudioTheme.accent)
@@ -668,7 +650,7 @@ struct ContentView: View {
 
     private func libraryRow(_ item: LibraryItem) -> some View {
         HStack(spacing: 10) {
-            Button { model.openLibraryItem(item); tab = .score } label: {
+            Button { model.openLibraryItemForDisplay(item); tab = .score } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "music.note")
                         .font(.system(size: 20)).foregroundStyle(StudioTheme.accent)
@@ -681,7 +663,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                 }.contentShape(Rectangle())
             }
-            Button { model.openLibraryItem(item, play: true); tab = .score } label: {
+            Button { model.openLibraryItemForDisplay(item, play: true); tab = .score } label: {
                 Image(systemName: "play.fill").font(.system(size: 15)).foregroundStyle(StudioTheme.accent).frame(width: 44, height: 44)
             }.accessibilityLabel(item.name + "を再生")
             Menu { libraryActions(item) } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44).foregroundStyle(StudioTheme.secondary) }
@@ -692,8 +674,8 @@ struct ContentView: View {
     }
 
     @ViewBuilder private func libraryActions(_ item: LibraryItem) -> some View {
-        Button { model.openLibraryItem(item); tab = .score } label: { Label("開く", systemImage: "doc.text.magnifyingglass") }
-        Button { model.openLibraryItem(item, play: true); tab = .score } label: { Label("再生", systemImage: "play") }
+        Button { model.openLibraryItemForDisplay(item); tab = .score } label: { Label("開く", systemImage: "doc.text.magnifyingglass") }
+        Button { model.openLibraryItemForDisplay(item, play: true); tab = .score } label: { Label("再生", systemImage: "play") }
         Button { renameText = item.name; renamingItem = item } label: { Label("名前を変更", systemImage: "pencil") }
         Button(role: .destructive) { deletingItem = item } label: { Label("削除", systemImage: "trash") }
     }
@@ -981,7 +963,8 @@ private struct PlaybackBar: View {
                 Image(systemName: model.engine.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
                     .frame(width: 44, height: 44).background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 14))
-            }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
+            }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生")
+                .disabled(model.tune == nil || (model.isOpening && !model.engine.isPlaying))
             Button { model.stopPlayback() } label: {
                 Image(systemName: "stop.fill").frame(width: 44, height: 44)
             }.accessibilityLabel("停止").disabled(model.tune == nil)
@@ -991,7 +974,7 @@ private struct PlaybackBar: View {
                    onEditingChanged: { editing in
                        if !editing, let value = seekDrag { model.seek(to: value) }
                        if !editing { seekDrag = nil }
-                   }).accessibilityLabel("再生位置").disabled(model.tune == nil)
+                   }).accessibilityLabel("再生位置").disabled(model.tune == nil || model.isOpening)
             Text(model.totalTimeText).font(.system(size: 10, design: .monospaced))
             Button { showPlaybackSettings = true } label: {
                 Text("\(model.speed)%").font(.system(size: 12, weight: .semibold)).frame(minWidth: 50, minHeight: 44)
@@ -1025,7 +1008,8 @@ private struct PlaybackBar: View {
                         .font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
                         .frame(width: 50, height: 50)
                         .background(StudioTheme.ink, in: RoundedRectangle(cornerRadius: 17))
-                }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生").disabled(model.tune == nil)
+                }.accessibilityLabel(model.engine.isPlaying ? "一時停止" : "再生")
+                .disabled(model.tune == nil || (model.isOpening && !model.engine.isPlaying))
             }
             HStack(spacing: 10) {
                 Text(model.currentTimeText).frame(width: 32, alignment: .leading)
@@ -1034,7 +1018,7 @@ private struct PlaybackBar: View {
                            if !editing, let value = seekDrag { model.seek(to: value) }
                            if !editing { seekDrag = nil }
                        })
-                    .accessibilityLabel("再生位置").disabled(model.tune == nil)
+                    .accessibilityLabel("再生位置").disabled(model.tune == nil || model.isOpening)
                 Text(model.totalTimeText).frame(width: 32, alignment: .trailing)
             }
             .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
@@ -1049,15 +1033,118 @@ private struct PlaybackBar: View {
 
 private struct PlaybackScore: View {
     let tune: ABCTune
-    @ObservedObject var cursor: PlaybackCursor
+    let cursor: PlaybackCursor
     let isPlaying: Bool
     @Binding var zoom: Double
     let followEnabled: Bool
+    let isActive: Bool
     let onTapNote: (Int) -> Void
+    @State private var highlight: Set<Int> = []
+    @State private var cursorID: Int?
 
     var body: some View {
-        ScoreView(tune: tune, highlight: cursor.highlight, cursorID: cursor.elementID,
-                  isPlaying: isPlaying, zoom: $zoom, followEnabled: followEnabled,
-                  onTapNote: onTapNote)
+        ScoreView(tune: tune, highlight: highlight, cursorID: cursorID,
+                  isPlaying: isPlaying && isActive, zoom: $zoom, followEnabled: followEnabled,
+                  onTapNote: onTapNote, isActive: isActive)
+            .onReceive(cursor.$highlight.combineLatest(cursor.$elementID)) { ids, anchor in
+                guard isActive else { return }
+                if highlight != ids { highlight = ids }
+                if cursorID != anchor { cursorID = anchor }
+            }
+            .onChange(of: isActive) { _, active in
+                if active { highlight = cursor.highlight; cursorID = cursor.elementID }
+            }
+    }
+}
+
+/// Snapshot values let unchanged parts skip view rebuilding during a fader drag.
+private struct MixerPartRow: View, Equatable {
+    let model: StudioModel
+    let voice: ABCVoice
+    let index: Int
+    let instrumentID: String
+    let volume: Double
+    let muted: Bool
+    let soloed: Bool
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.model === b.model && a.voice.id == b.voice.id && a.voice.name == b.voice.name
+            && a.index == b.index && a.instrumentID == b.instrumentID
+            && a.volume == b.volume && a.muted == b.muted && a.soloed == b.soloed
+    }
+
+    var body: some View {
+        let instrument = Instruments.byID(instrumentID) ?? Instruments.all[0]
+        let percent = Int((volume * 100).rounded())
+        let color = StudioTheme.trackColors[index % StudioTheme.trackColors.count]
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Text(String(format: "%02d", index + 1))
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(color).frame(width: 44, height: 44)
+                    .background(color.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(voice.name).font(.system(size: 16, weight: .semibold))
+                    Text(instrument.category).font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
+                }.opacity(muted ? 0.45 : 1)
+                Spacer(minLength: 0)
+                Button { model.toggleSolo(voice.id) } label: {
+                    Text("ソロ").font(.system(size: 11, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(soloed ? .white : StudioTheme.secondary)
+                        .background(soloed ? color : StudioTheme.background, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityLabel(voice.name + "をソロ再生").accessibilityValue(soloed ? "オン" : "オフ")
+                Button { model.toggleMute(voice.id) } label: {
+                    Image(systemName: muted ? "speaker.slash.fill" : "speaker.wave.2")
+                        .font(.system(size: 15)).frame(width: 44, height: 44)
+                        .foregroundStyle(muted ? StudioTheme.danger : StudioTheme.secondary)
+                        .background(muted ? StudioTheme.danger.opacity(0.09) : StudioTheme.background, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityLabel(voice.name + "をミュート").accessibilityValue(muted ? "オン" : "オフ")
+            }
+            HStack(spacing: 12) {
+                Slider(value: Binding(get: { volume },
+                                      set: { model.setPartVolume(voice.id, volume: $0) }), in: 0...1)
+                    .tint(color).accessibilityLabel(voice.name + "の音量")
+                    .accessibilityValue("\(percent)%").accessibilityIdentifier("part-volume-\(voice.id)")
+                Text("\(percent)%").font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(StudioTheme.secondary).frame(width: 42, alignment: .trailing).accessibilityHidden(true)
+            }
+            Divider()
+            HStack {
+                Text("音色").font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+                Spacer(minLength: 4)
+                InstrumentMenu(model: model, voiceID: voice.id, voiceName: voice.name,
+                               selection: instrumentID).equatable()
+            }
+        }.studioCard()
+    }
+}
+
+private struct InstrumentMenu: View, Equatable {
+    let model: StudioModel
+    let voiceID: String
+    let voiceName: String
+    let selection: String
+    private static let groups = Instruments.categories.map { category in
+        (category, Instruments.all.filter { $0.category == category })
+    }
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.model === b.model && a.voiceID == b.voiceID && a.voiceName == b.voiceName
+            && a.selection == b.selection
+    }
+
+    var body: some View {
+        Picker(voiceName + "の楽器", selection: Binding(
+            get: { selection }, set: { model.assign(voiceID, instrument: $0) })) {
+            ForEach(Self.groups, id: \.0) { category, instruments in
+                Section(category) {
+                    ForEach(instruments, id: \.id) { inst in Text(inst.label).tag(inst.id) }
+                }
+            }
+        }
+        .pickerStyle(.menu).font(.system(size: 13, weight: .medium))
     }
 }

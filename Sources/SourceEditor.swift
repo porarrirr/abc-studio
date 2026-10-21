@@ -1,3 +1,45 @@
+import Foundation
+
+/// Syntax is line-local. Recolor only lines touched by an edit, keeping UTF-16
+/// offsets consistent with NSTextStorage and NSRegularExpression.
+enum SourceSyntax {
+    enum Kind: Equatable { case field, comment }
+    struct Span: Equatable {
+        let range: NSRange
+        let kind: Kind
+    }
+    struct Plan {
+        let range: NSRange
+        let spans: [Span]
+    }
+    private static let fields = try! NSRegularExpression(pattern: "(?m)^[A-Za-z]:[^\\n]*")
+    private static let comments = try! NSRegularExpression(pattern: "(?m)%[^\\n]*")
+
+    static func lineCount(in source: String) -> Int {
+        source.unicodeScalars.reduce(into: 1) { count, scalar in
+            switch scalar.value {
+            case 10...13, 0x85, 0x2028, 0x2029: count += 1
+            default: break
+            }
+        }
+    }
+
+    static func plan(in source: String, editedRange: NSRange? = nil) -> Plan {
+        let text = source as NSString
+        let range: NSRange
+        if let edit = editedRange, edit.location != NSNotFound,
+           edit.location <= text.length, edit.length <= text.length - edit.location {
+            range = text.lineRange(for: edit)
+        } else {
+            range = NSRange(location: 0, length: text.length)
+        }
+        let spans = fields.matches(in: source, range: range).map { Span(range: $0.range, kind: .field) }
+            + comments.matches(in: source, range: range).map { Span(range: $0.range, kind: .comment) }
+        return Plan(range: range, spans: spans)
+    }
+}
+
+#if canImport(UIKit)
 import SwiftUI
 import UIKit
 
@@ -5,6 +47,7 @@ import UIKit
 struct SourceEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var jumpToLine: Int?
+    var isActive = true
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -48,6 +91,7 @@ struct SourceEditor: UIViewRepresentable {
 
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.parent = self
+        guard isActive else { return }
         if view.text != text {
             let selection = view.selectedRange
             view.text = text
@@ -85,32 +129,88 @@ struct SourceEditor: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: SourceEditor
         weak var textView: UITextView?
-        private let fields = try! NSRegularExpression(pattern: "(?m)^[A-Za-z]:[^\\n]*")
-        private let comments = try! NSRegularExpression(pattern: "(?m)%[^\\n]*")
+        private var pendingEdit: NSRange?
+        private var syntaxGeneration = 0
+        private var syntaxWork: DispatchWorkItem?
+        private var fullColorPending = false
+        private static let syntaxQueue = DispatchQueue(label: "jp.porari.abcstudio.syntax", qos: .userInitiated)
 
         init(_ parent: SourceEditor) { self.parent = parent }
 
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
+                      replacementText text: String) -> Bool {
+            pendingEdit = textView.markedTextRange == nil
+                ? NSRange(location: range.location, length: (text as NSString).length) : nil
+            return true
+        }
+
         func textViewDidChange(_ textView: UITextView) {
             // Keep marked text intact when an input method is composing.
-            guard textView.markedTextRange == nil else { return }
-            colorSyntax(textView)
+            guard textView.markedTextRange == nil else { pendingEdit = nil; return }
+            let edit = pendingEdit
+            pendingEdit = nil
+            colorSyntax(textView, editedRange: edit)
             parent.text = textView.text
         }
 
-        func colorSyntax(_ view: UITextView) {
+        func colorSyntax(_ view: UITextView, editedRange: NSRange? = nil) {
             guard view.markedTextRange == nil else { return }
+            syntaxGeneration += 1
+            syntaxWork?.cancel()
+            let generation = syntaxGeneration
             let source = view.text ?? ""
-            let range = NSRange(location: 0, length: (source as NSString).length)
-            view.textStorage.beginEditing()
-            view.textStorage.addAttributes([
-                .font: UIFont.monospacedSystemFont(ofSize: 14, weight: .regular),
-                .foregroundColor: UIColor(StudioTheme.ink)
-            ], range: range)
-            for match in fields.matches(in: source, range: range) {
-                view.textStorage.addAttribute(.foregroundColor, value: UIColor(StudioTheme.accent), range: match.range)
+            if let editedRange, !fullColorPending {
+                let plan = SourceSyntax.plan(in: source, editedRange: editedRange)
+                apply(plan, to: view, spans: plan.spans[...], reset: true)
+                return
             }
-            for match in comments.matches(in: source, range: range) {
-                view.textStorage.addAttribute(.foregroundColor, value: UIColor(StudioTheme.secondary), range: match.range)
+            fullColorPending = true
+            let work = DispatchWorkItem { [weak self, weak view] in
+                let plan = SourceSyntax.plan(in: source)
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view, self.syntaxGeneration == generation else { return }
+                    self.applyNextBatch(plan, to: view, generation: generation, start: 0)
+                }
+            }
+            syntaxWork = work
+            Self.syntaxQueue.async(execute: work)
+        }
+
+        private func applyNextBatch(_ plan: SourceSyntax.Plan, to view: UITextView,
+                                    generation: Int, start: Int) {
+            guard generation == syntaxGeneration else { return }
+            // UIKit text replacement while an IME is composing invalidates the
+            // old offsets; the commit callback will request a fresh full pass.
+            guard view.markedTextRange == nil else { fullColorPending = true; return }
+            let end = min(plan.spans.count, start + 200)
+            apply(plan, to: view, spans: plan.spans[start..<end], reset: start == 0)
+            if end == plan.spans.count {
+                fullColorPending = false
+                syntaxWork = nil
+            } else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(8)) { [weak self, weak view] in
+                    guard let self, let view else { return }
+                    self.applyNextBatch(plan, to: view, generation: generation, start: end)
+                }
+            }
+        }
+
+        private func apply(_ plan: SourceSyntax.Plan, to view: UITextView,
+                           spans: ArraySlice<SourceSyntax.Span>, reset: Bool) {
+            let undo = view.undoManager
+            let suppressUndo = undo?.isUndoRegistrationEnabled == true
+            if suppressUndo { undo?.disableUndoRegistration() }
+            defer { if suppressUndo { undo?.enableUndoRegistration() } }
+            view.textStorage.beginEditing()
+            if reset {
+                view.textStorage.addAttributes([
+                    .font: UIFont.monospacedSystemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: UIColor(StudioTheme.ink)
+                ], range: plan.range)
+            }
+            for span in spans {
+                let ink = span.kind == .field ? StudioTheme.accent : StudioTheme.secondary
+                view.textStorage.addAttribute(.foregroundColor, value: UIColor(ink), range: span.range)
             }
             view.textStorage.endEditing()
             view.typingAttributes = [.font: UIFont.monospacedSystemFont(ofSize: 14, weight: .regular),
@@ -122,3 +222,5 @@ struct SourceEditor: UIViewRepresentable {
         @objc func done() { textView?.resignFirstResponder() }
     }
 }
+
+#endif

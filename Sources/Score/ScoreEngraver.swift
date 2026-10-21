@@ -34,6 +34,38 @@ public enum EngravedShape {
     }
 }
 
+/// Retains a few recent layouts when the score tab is removed from the view
+/// tree. Geometry and source are part of the key so edits and rotation rebuild.
+final class ScoreLayoutCache {
+    static let shared = ScoreLayoutCache()
+    private final class Entry {
+        let score: EngravedScore
+        init(_ score: EngravedScore) { self.score = score }
+    }
+    private let entries = NSCache<NSString, Entry>()
+
+    init() {
+        entries.countLimit = 3
+        entries.totalCostLimit = 60_000 // bound retained drawing shapes
+    }
+
+    func cachedScore(for tune: ABCTune, width: CGFloat, zoom: Double) -> EngravedScore? {
+        let key = "\(tune.index)#\(width)#\(zoom)#\(tune.source)" as NSString
+        return entries.object(forKey: key)?.score
+    }
+
+    func score(for tune: ABCTune, width: CGFloat, zoom: Double,
+               engrave: (ABCTune, CGFloat) -> EngravedScore = {
+                   ScoreEngraver.engrave($0, width: $1)
+               }) -> EngravedScore {
+        let key = "\(tune.index)#\(width)#\(zoom)#\(tune.source)" as NSString
+        if let entry = entries.object(forKey: key) { return entry.score }
+        let score = engrave(tune, width / zoom).scaled(by: zoom)
+        entries.setObject(Entry(score), forKey: key, cost: score.shapes.count)
+        return score
+    }
+}
+
 /// 音符要素 id → 位置。rect = カーソル列・タップ判定領域、shapeRange = 色替えする図形
 /// (符頭・休符)、system = その音符がある段の番号。
 public struct CursorTarget {
@@ -1682,6 +1714,45 @@ public enum ScorePainter {
             }
         }
 
+        drawCursorColumn(score, in: ctx, cursorID: cursorID, system: system)
+
+        for i in range {
+            let ink: (ScoreInk) -> CGColor = { color(accentShapes.contains(i) ? .accent : $0) }
+            drawShape(score.shapes[i], in: ctx, ink: ink)
+        }
+    }
+
+    /// The cursor sits below the unchanged score layer.
+    static func drawCursorYDown(_ score: EngravedScore, in ctx: CGContext,
+                                cursorID: Int?, system: Int) {
+        guard score.systems.indices.contains(system) else { return }
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.translateBy(x: 0, y: -score.systems[system].band.minY)
+        drawCursorColumn(score, in: ctx, cursorID: cursorID, system: system)
+    }
+
+    /// Draw just the active note shapes, rather than replaying the whole staff.
+    static func drawHighlightsYDown(_ score: EngravedScore, in ctx: CGContext,
+                                    highlight: Set<Int>, system: Int) {
+        guard score.systems.indices.contains(system) else { return }
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.translateBy(x: 0, y: -score.systems[system].band.minY)
+        var indices = Set<Int>()
+        for id in highlight {
+            if let target = score.targets[id], target.system == system {
+                indices.formUnion(target.shapeRange)
+            }
+        }
+        let accent = color(.accent)
+        for index in indices.sorted() where score.shapes.indices.contains(index) {
+            drawShape(score.shapes[index], in: ctx, ink: { _ in accent })
+        }
+    }
+
+    private static func drawCursorColumn(_ score: EngravedScore, in ctx: CGContext,
+                                         cursorID: Int?, system: Int?) {
         // 再生位置: 鳴っている音符の列を段の全五線にわたって淡く塗る(記譜の下に敷く)
         if let cid = cursorID, let t = score.targets[cid], system == nil || t.system == system,
            score.systems.indices.contains(t.system) {
@@ -1693,45 +1764,46 @@ public enum ScorePainter {
             ctx.addPath(CGPath(roundedRect: col, cornerWidth: col.width / 3, cornerHeight: col.width / 3, transform: nil))
             ctx.fillPath()
         }
+    }
 
-        for i in range {
-            let ink: (ScoreInk) -> CGColor = { color(accentShapes.contains(i) ? .accent : $0) }
-            switch score.shapes[i] {
-            case .fill(let path, let k):
-                ctx.setFillColor(ink(k))
-                ctx.addPath(path)
-                ctx.fillPath()
-            case .stroke(let path, let lw, let k):
-                ctx.setStrokeColor(ink(k))
-                ctx.setLineWidth(lw)
-                ctx.setLineCap(.butt)
-                ctx.setLineJoin(.miter)
-                ctx.addPath(path)
-                ctx.strokePath()
-            case .text(let str, let size, let bold, let rect, let anchor, let k):
-                let font = ScoreFonts.font(size: size, bold: bold)
-                let attrs: [NSAttributedString.Key: Any] = [
-                    NSAttributedString.Key(kCTFontAttributeName as String): font,
-                    NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink(k)
-                ]
-                let line = CTLineCreateWithAttributedString(NSAttributedString(string: str, attributes: attrs))
-                var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-                let tw = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-                var tx = rect.minX
-                switch anchor {
-                case .center: tx = rect.midX - tw / 2
-                case .trailing: tx = rect.maxX - tw
-                case .leading: break
-                }
-                let baseline = rect.midY + (ascent - descent) / 2
-                ctx.saveGState()
-                ctx.translateBy(x: tx, y: baseline)
-                ctx.scaleBy(x: 1, y: -1)
-                ctx.textMatrix = .identity
-                ctx.textPosition = .zero
-                CTLineDraw(line, ctx)
-                ctx.restoreGState()
+    private static func drawShape(_ shape: EngravedShape, in ctx: CGContext,
+                                  ink: (ScoreInk) -> CGColor) {
+        switch shape {
+        case .fill(let path, let k):
+            ctx.setFillColor(ink(k))
+            ctx.addPath(path)
+            ctx.fillPath()
+        case .stroke(let path, let lw, let k):
+            ctx.setStrokeColor(ink(k))
+            ctx.setLineWidth(lw)
+            ctx.setLineCap(.butt)
+            ctx.setLineJoin(.miter)
+            ctx.addPath(path)
+            ctx.strokePath()
+        case .text(let str, let size, let bold, let rect, let anchor, let k):
+            let font = ScoreFonts.font(size: size, bold: bold)
+            let attrs: [NSAttributedString.Key: Any] = [
+                NSAttributedString.Key(kCTFontAttributeName as String): font,
+                NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink(k)
+            ]
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: str, attributes: attrs))
+            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            let tw = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+            var tx = rect.minX
+            switch anchor {
+            case .center: tx = rect.midX - tw / 2
+            case .trailing: tx = rect.maxX - tw
+            case .leading: break
             }
+            let baseline = rect.midY + (ascent - descent) / 2
+            ctx.saveGState()
+            ctx.translateBy(x: tx, y: baseline)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.textMatrix = .identity
+            ctx.textPosition = .zero
+            CTLineDraw(line, ctx)
+            ctx.restoreGState()
         }
     }
+
 }

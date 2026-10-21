@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Accelerate
 
 /// Turns bundled soundfont directories (`<dir>/<NoteName>.m4a`, C4=60) into
 /// ready-to-schedule AVAudioPCMBuffers: the nearest available sample is decoded,
@@ -41,8 +42,35 @@ public final class SoundFontPlayer {
     private var missingDirs = Set<String>()
     /// Decoded (format-converted) source samples, keyed "dir|fileMidi".
     private let decodedCache = NSCache<NSString, AVAudioPCMBuffer>()
-    /// Pitch-shifted samples, keyed "dir|targetMidi".
-    private let pitchedCache = NSCache<NSString, AVAudioPCMBuffer>()
+    private final class PitchedSample {
+        let buffer: AVAudioPCMBuffer
+        let peak: Float
+        init(_ buffer: AVAudioPCMBuffer) {
+            self.buffer = buffer
+            var maximum: Float = 0
+            for channel in 0..<Int(buffer.format.channelCount) {
+                var value: Float = 0
+                vDSP_maxmgv(buffer.floatChannelData![channel], 1, &value,
+                            vDSP_Length(buffer.frameLength))
+                maximum = max(maximum, value)
+            }
+            peak = maximum
+        }
+    }
+    /// Pitch-shifted samples and their peaks, keyed "dir|targetMidi".
+    private let pitchedCache = NSCache<NSString, PitchedSample>()
+    /// Final buffers are immutable after creation and can be shared by repeated
+    /// notes, seeks and loops. Both entries and memory remain bounded.
+    private let eventCache = NSCache<NSString, AVAudioPCMBuffer>()
+    private final class FadeEnvelope {
+        let values: [Float]
+        init(count: Int) {
+            values = (0..<count).map {
+                Float(0.5 * (1 + cos(Double.pi * Double($0) / Double(count))))
+            }
+        }
+    }
+    private let fadeCache = NSCache<NSNumber, FadeEnvelope>()
     private let lock = NSLock()
 
     public init() {
@@ -50,45 +78,65 @@ public final class SoundFontPlayer {
         // bound the caches by bytes so heavy tunes can't balloon memory.
         decodedCache.totalCostLimit = 300 * 1024 * 1024
         pitchedCache.totalCostLimit = 300 * 1024 * 1024
+        eventCache.totalCostLimit = 16 * 1024 * 1024
+        eventCache.countLimit = 256
+        fadeCache.totalCostLimit = 8 * 1024 * 1024
     }
 
     // MARK: - Public API
 
     /// Builds a buffer for one event: `seconds` long (in output time), velocity gain.
     /// Returns nil when the soundfont dir is missing or undecodable.
+    /// Returned buffers are shared and must be treated as read-only.
     public func makeBuffer(dir: String, midi: Int, seconds: TimeInterval, velocity: Double)
         -> AVAudioPCMBuffer? {
-        guard let source = pitchedBuffer(dir: dir, midi: midi) else { return nil }
+        guard let sample = pitchedBuffer(dir: dir, midi: midi) else { return nil }
+        let source = sample.buffer
         let clamped = min(max(seconds, minimumDuration), maximumDuration)
         let wanted = max(1, AVAudioFrameCount((clamped * Self.sampleRate).rounded(.up)))
         let tailFrames = AVAudioFrameCount((sustainTail * Self.sampleRate).rounded(.down))
         let frames = min(wanted + tailFrames, source.frameLength)
+        var gain = Float(velocity / 127.0) * volumeMultiplier
+        let fadeFrames = AVAudioFrameCount((releaseFade * Self.sampleRate).rounded(.down))
+        let fadeStart = frames > fadeFrames ? Int(frames - fadeFrames) : 0
+        let fadeLen = max(1, Int(frames) - fadeStart)
+        let key = "\(dir)|\(midi)|\(frames)|\(gain.bitPattern)|\(fadeLen)|\(clipKnee.bitPattern)|\(clipLevel.bitPattern)" as NSString
+        if let cached = eventCache.object(forKey: key) { return cached }
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
             return nil
         }
         out.frameLength = frames
-        let gain = Float(velocity / 127.0) * volumeMultiplier
-        let fadeFrames = AVAudioFrameCount((releaseFade * Self.sampleRate).rounded(.down))
-        let fadeStart = frames > fadeFrames ? Int(frames - fadeFrames) : 0
-        let fadeLen = max(1, Int(frames) - fadeStart)
+        let fadeKey = NSNumber(value: fadeLen)
+        let fade: FadeEnvelope
+        if let cached = fadeCache.object(forKey: fadeKey) {
+            fade = cached
+        } else {
+            fade = FadeEnvelope(count: fadeLen)
+            fadeCache.setObject(fade, forKey: fadeKey, cost: fadeLen * MemoryLayout<Float>.size)
+        }
         for channel in 0..<Int(format.channelCount) {
             let src = source.floatChannelData![channel]
             let dst = out.floatChannelData![channel]
-            for i in 0..<Int(frames) {
-                var sample = src[i] * gain
-                let magnitude = abs(sample)
-                if magnitude > clipKnee {
-                    let over = magnitude - clipKnee
-                    let limit = clipLevel - clipKnee
-                    sample = copysign(clipKnee + over * limit / (limit + over), sample)
+            vDSP_vsmul(src, 1, &gain, dst, 1, vDSP_Length(frames))
+            // Most notes are below the soft-clip knee. Avoid scalar processing
+            // entirely for them; preserve the original curve for louder notes.
+            if sample.peak * abs(gain) > clipKnee {
+                let limit = clipLevel - clipKnee
+                for i in 0..<Int(frames) {
+                    let sample = dst[i]
+                    let magnitude = abs(sample)
+                    if magnitude > clipKnee {
+                        let over = magnitude - clipKnee
+                        dst[i] = copysign(clipKnee + over * limit / (limit + over), sample)
+                    }
                 }
-                if i >= fadeStart {
-                    let t = Double(i - fadeStart) / Double(fadeLen)
-                    sample *= Float(0.5 * (1 + cos(Double.pi * min(1, t))))
-                }
-                dst[i] = sample
+            }
+            fade.values.withUnsafeBufferPointer { envelope in
+                vDSP_vmul(dst + fadeStart, 1, envelope.baseAddress!, 1,
+                          dst + fadeStart, 1, vDSP_Length(Int(frames) - fadeStart))
             }
         }
+        eventCache.setObject(out, forKey: key, cost: byteSize(of: out))
         return out
     }
 
@@ -181,7 +229,7 @@ public final class SoundFontPlayer {
     // MARK: - Buffer pipeline
 
     /// Resampled (pitch-shifted) buffer for a target midi, cached per (dir, midi).
-    private func pitchedBuffer(dir: String, midi: Int) -> AVAudioPCMBuffer? {
+    private func pitchedBuffer(dir: String, midi: Int) -> PitchedSample? {
         let key = "\(dir)|\(midi)" as NSString
         lock.lock()
         let hit = pitchedCache.object(forKey: key)
@@ -195,10 +243,11 @@ public final class SoundFontPlayer {
         }
         let semitones = midi - nearest
         let result = semitones == 0 ? decoded : resample(decoded, semitones: semitones)
+        let sample = PitchedSample(result)
         lock.lock()
-        pitchedCache.setObject(result, forKey: key, cost: byteSize(of: result))
+        pitchedCache.setObject(sample, forKey: key, cost: byteSize(of: result))
         lock.unlock()
-        return result
+        return sample
     }
 
     private func nearestMidi(to target: Int, in midis: [Int]) -> Int? {

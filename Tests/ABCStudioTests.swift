@@ -517,6 +517,194 @@ final class ABCStudioTests: XCTestCase {
         }
     }
 
+    func testAudioVectorProcessingMatchesScalarReferenceAndCachesSafely() throws {
+        let rawPlayer = SoundFontPlayer()
+        rawPlayer.releaseFade = 0
+        rawPlayer.clipKnee = 100
+        let source = try XCTUnwrap(rawPlayer.makeBuffer(dir: "acoustic_grand_piano",
+            midi: 60, seconds: 0.4, velocity: 127))
+        let player = SoundFontPlayer()
+        for fade in [0.0, 0.12, 3.0] {
+            for velocity in [0.0, 80.0, 127.0] {
+                for volume: Float in [1, 2] {
+                    player.releaseFade = fade
+                    player.volumeMultiplier = volume
+                    let out = try XCTUnwrap(player.makeBuffer(dir: "acoustic_grand_piano",
+                        midi: 60, seconds: 0.4, velocity: velocity))
+                    XCTAssertEqual(out.frameLength, source.frameLength)
+                    let count = Int(out.frameLength)
+                    let fadeStart = max(0, count - Int(fade * SoundFontPlayer.sampleRate))
+                    let fadeLen = max(1, count - fadeStart)
+                    var error: Float = 0
+                    for channel in 0..<2 {
+                        for frame in 0..<count {
+                            var expected = source.floatChannelData![channel][frame]
+                                * Float(velocity / 127) * volume
+                            if abs(expected) > player.clipKnee {
+                                let over = abs(expected) - player.clipKnee
+                                let limit = player.clipLevel - player.clipKnee
+                                expected = copysign(player.clipKnee + over * limit / (limit + over), expected)
+                            }
+                            if frame >= fadeStart {
+                                expected *= Float(0.5 * (1 + cos(Double.pi * Double(frame - fadeStart) / Double(fadeLen))))
+                            }
+                            error = max(error, abs(expected - out.floatChannelData![channel][frame]))
+                        }
+                    }
+                    XCTAssertLessThan(error, 0.000001)
+                    let repeatBuffer = player.makeBuffer(dir: "acoustic_grand_piano",
+                        midi: 60, seconds: 0.4, velocity: velocity)
+                    XCTAssertTrue(out === repeatBuffer, "同じ条件の音符は加工済みバッファを共有する")
+                }
+            }
+        }
+        let before = try XCTUnwrap(player.makeBuffer(dir: "acoustic_grand_piano",
+            midi: 60, seconds: 0.4, velocity: 127))
+        player.clipLevel = 0.85
+        let changed = player.makeBuffer(dir: "acoustic_grand_piano", midi: 60,
+                                       seconds: 0.4, velocity: 127)
+        XCTAssertFalse(before === changed, "音質設定を変更したら古い加工結果を使わない")
+    }
+
+    func testLayoutCacheReusesGeometryAndInvalidatesEditsWidthAndZoom() {
+        let cache = ScoreLayoutCache()
+        let original = tune("X:1\nT:one\nM:4/4\nK:C\nCDEF |")
+        let edited = tune("X:1\nT:two\nM:4/4\nK:C\nGABc |")
+        var engravings = 0
+        let engrave: (ABCTune, CGFloat) -> EngravedScore = { _, width in
+            engravings += 1
+            return EngravedScore(size: CGSize(width: width, height: 100), shapes: [], targets: [:])
+        }
+        _ = cache.score(for: original, width: 390, zoom: 1, engrave: engrave)
+        _ = cache.score(for: original, width: 390, zoom: 1, engrave: engrave)
+        XCTAssertEqual(engravings, 1, "タブに戻っても同じ楽譜を再組版しない")
+        _ = cache.score(for: edited, width: 390, zoom: 1, engrave: engrave)
+        XCTAssertEqual(engravings, 2)
+        _ = cache.score(for: edited, width: 700, zoom: 1, engrave: engrave)
+        XCTAssertEqual(engravings, 3)
+        let zoomed = cache.score(for: edited, width: 700, zoom: 1.5, engrave: engrave)
+        XCTAssertEqual(engravings, 4)
+        XCTAssertEqual(zoomed.size.width, 700, accuracy: 0.001)
+        XCTAssertEqual(zoomed.size.height, 150, accuracy: 0.001)
+    }
+
+    func testIncrementalSyntaxMatchesWholeDocumentForUTF16AndMultilineEdits() {
+        let original = "X:1\nT:日本語🎵\nK:C\nCDEF | % comment\nGABc |\n"
+        let text = original as NSString
+        let changes: [(NSRange, String)] = [
+            (text.range(of: "CDEF"), "C % new\nT:追加🎻\nD"),
+            (text.range(of: "% comment"), "ordinary notes"),
+            (text.range(of: "\nK:C"), "K:G"),
+            (NSRange(location: text.length, length: 0), "% end"),
+            (NSRange(location: 0, length: text.length), ""),
+            (text.range(of: "🎵"), "音楽🎶")
+        ]
+        for (range, replacement) in changes {
+            let changed = text.replacingCharacters(in: range, with: replacement)
+            let edit = NSRange(location: range.location, length: (replacement as NSString).length)
+            let partial = SourceSyntax.plan(in: changed, editedRange: edit)
+            let whole = SourceSyntax.plan(in: changed)
+            let expected = whole.spans.filter { NSIntersectionRange($0.range, partial.range).length > 0 }
+            XCTAssertEqual(partial.spans, expected)
+            XCTAssertEqual(partial.range, (changed as NSString).lineRange(for: edit))
+        }
+        for source in ["", original, "a\r\nb\u{85}c\u{2028}d\u{2029}🎵\n", "one line"] {
+            XCTAssertEqual(SourceSyntax.lineCount(in: source), source.components(separatedBy: .newlines).count)
+        }
+        let fallback = SourceSyntax.plan(in: original, editedRange: NSRange(location: NSNotFound, length: 0))
+        XCTAssertEqual(fallback.spans, SourceSyntax.plan(in: original).spans)
+    }
+
+    func testLayeredScorePaintingPreservesSolidColorsAndSystemFiltering() throws {
+        let score = EngravedScore(size: CGSize(width: 100, height: 100), shapes: [
+            .fill(CGPath(rect: CGRect(x: 10, y: 20, width: 10, height: 10), transform: nil), .primary),
+            .fill(CGPath(rect: CGRect(x: 60, y: 20, width: 10, height: 10), transform: nil), .faint)
+        ], targets: [1: CursorTarget(rect: CGRect(x: 10, y: 20, width: 10, height: 10), shapeRange: 0..<1)],
+        systems: [EngravedSystem(band: CGRect(x: 0, y: 0, width: 100, height: 100),
+                                staffTop: 10, staffBottom: 80, shapeRange: 0..<2)])
+        func render(_ layered: Bool) throws -> Data {
+            let ctx = try XCTUnwrap(CGContext(data: nil, width: 100, height: 100,
+                bitsPerComponent: 8, bytesPerRow: 400, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            ctx.setShouldAntialias(false)
+            if layered {
+                ScorePainter.drawCursorYDown(score, in: ctx, cursorID: 1, system: 0)
+                ScorePainter.drawYDown(score, in: ctx, highlight: [], cursorID: nil, system: 0)
+                ScorePainter.drawHighlightsYDown(score, in: ctx, highlight: [1], system: 0)
+            } else {
+                ScorePainter.drawYDown(score, in: ctx, highlight: [1], cursorID: 1, system: 0)
+            }
+            return Data(bytes: try XCTUnwrap(ctx.data), count: 40_000)
+        }
+        XCTAssertEqual(try render(false), try render(true))
+        let ctx = try XCTUnwrap(CGContext(data: nil, width: 100, height: 100,
+            bitsPerComponent: 8, bytesPerRow: 400, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ScorePainter.drawHighlightsYDown(score, in: ctx, highlight: [1], system: 1)
+        ScorePainter.drawCursorYDown(score, in: ctx, cursorID: 1, system: 1)
+        let untouched = Data(bytes: try XCTUnwrap(ctx.data), count: 40_000)
+        XCTAssertTrue(untouched.allSatisfy { $0 == 0 })
+    }
+
+    func testDocumentPreparationBuildsWholeBookAndReadyFirstTune() throws {
+        let source = "X:1\nT:First\nM:4/4\nL:1/4\nV:melody name=\"Violin\"\nK:C\n[V:melody] C D |\n\nX:2\nT:Second\nM:4/4\nL:1/4\nK:G\nG A |\n"
+        let doc = try XCTUnwrap(StudioDocumentPreparation.document(source.replacingOccurrences(of: "\n", with: "\r\n")))
+        XCTAssertEqual(doc.source, source)
+        XCTAssertEqual(doc.book.tunes.map(\.title), ["First", "Second"])
+        XCTAssertFalse(doc.diagnostics.contains { $0.severity == .error })
+        let first = try XCTUnwrap(doc.firstTune)
+        XCTAssertEqual(first.instruments["melody"], "violin")
+        XCTAssertEqual(first.sequence.tracks.first?.events.map(\.midi), [60, 62])
+        let second = StudioDocumentPreparation.tune(doc.book.tunes[1])
+        XCTAssertEqual(second.sequence.tracks.first?.events.map(\.midi), [67, 69])
+    }
+
+    func testDocumentPreparationHandlesEmptyAndInvalidSources() throws {
+        XCTAssertNil(StudioDocumentPreparation.document(" \r\n\t"))
+        let invalid = try XCTUnwrap(StudioDocumentPreparation.document("invalid ABC"))
+        XCTAssertTrue(invalid.book.tunes.isEmpty)
+        XCTAssertNil(invalid.firstTune)
+        XCTAssertTrue(invalid.diagnostics.contains { $0.severity == .error })
+    }
+
+    func testNewDraftCancelsPendingDocumentApply() {
+        let model = StudioModel()
+        model.loadABC("X:1\nT:Original\nM:4/4\nK:C\nCDEF |", filename: "original", persist: false)
+        model.source = "X:1\nT:Pending\nM:4/4\nK:C\n" + String(repeating: "CDEF GABc | ", count: 64)
+        model.applySourceForDisplay { _ in XCTFail("古い下書きの結果を反映しない") }
+        XCTAssertTrue(model.isOpening)
+        model.source = "edited again"
+        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        XCTAssertFalse(model.isOpening)
+        XCTAssertEqual(model.tune?.title, "Original")
+        XCTAssertEqual(model.source, "edited again")
+    }
+
+    func testLatestAsynchronousDocumentSelectionWins() {
+        let defaults = UserDefaults.standard
+        let savedSource = defaults.object(forKey: "lastABC")
+        let savedName = defaults.object(forKey: "lastFilename")
+        defer {
+            if let savedSource { defaults.set(savedSource, forKey: "lastABC") }
+            else { defaults.removeObject(forKey: "lastABC") }
+            if let savedName { defaults.set(savedName, forKey: "lastFilename") }
+            else { defaults.removeObject(forKey: "lastFilename") }
+        }
+        let model = StudioModel()
+        model.source = "X:1\nT:First request\nM:4/4\nK:C\nCDEF |"
+        model.applySourceForDisplay { _ in XCTFail("先の選択が後の選択を上書きしない") }
+        model.source = "X:1\nT:Latest request\nM:4/4\nK:C\nGABc |"
+        let applied = expectation(description: "最新の曲の準備が完了する")
+        model.applySourceForDisplay { success in
+            XCTAssertTrue(success)
+            applied.fulfill()
+        }
+        wait(for: [applied], timeout: 8)
+        XCTAssertFalse(model.isOpening)
+        XCTAssertEqual(model.tune?.title, "Latest request")
+        model.engine.stop()
+    }
+
     func testCombinedCelloBassExportsBothInstruments() {
         let track = PlaybackTrack(voiceID: "1", name: "Violoncello e Basso", isPercussion: false,
             events: [PlaybackEvent(elementID: 1, midi: 48, startBeat: 0, durationBeats: 1, velocity: 100)])

@@ -11,7 +11,7 @@ struct ABCStudioApp: App {
                 .environmentObject(model)
                 .onOpenURL { url in
                     // Files/メール等からの "このアプリで開く"
-                    model.importFile(url)
+                    model.importFileForDisplay(url)
                 }
         }
     }

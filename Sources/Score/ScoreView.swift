@@ -1,11 +1,18 @@
 import SwiftUI
 
 /// Engraving cache so that cursor/highlight ticks do not re-run layout.
-private final class ScoreMemo {
-    var key: String = ""
-    var score = EngravedScore(size: .zero, shapes: [], targets: [:])
+private final class ScoreMemo: ObservableObject {
+    static let queue = DispatchQueue(label: "jp.porari.abcstudio.scorelayout", qos: .userInitiated)
+    var generation = 0
+    var work: DispatchWorkItem?
+    @Published var isLoading = false
+    var source: String?
+    var tuneIndex: Int?
+    var width: CGFloat?
+    var zoom: Double?
+    @Published var score = EngravedScore(size: .zero, shapes: [], targets: [:])
     /// レイアウトが変わるたびに増える(段ビューの再描画判定・追従のやり直しに使う)
-    var version = 0
+    @Published var version = 0
 }
 
 /// 譜面ビュー。ビューポート幅に合わせて段組みし、段(システム)ごとのビューを
@@ -24,7 +31,8 @@ public struct ScoreView: View {
     public let followEnabled: Bool
     public var onTapNote: ((Int) -> Void)?
 
-    @State private var memo = ScoreMemo()
+    public var isActive = true
+    @StateObject private var memo = ScoreMemo()
     @State private var followSuspended = false
     /// ピンチ中の見た目だけの拡大率(指を離したら zoom に確定して組み直す)
     @State private var pinchScale: CGFloat = 1
@@ -33,7 +41,8 @@ public struct ScoreView: View {
     public static let maxZoom = 2.0
 
     public init(tune: ABCTune, highlight: Set<Int>, cursorID: Int?, isPlaying: Bool,
-                zoom: Binding<Double>, followEnabled: Bool, onTapNote: ((Int) -> Void)? = nil) {
+                zoom: Binding<Double>, followEnabled: Bool, onTapNote: ((Int) -> Void)? = nil,
+                isActive: Bool = true) {
         self.tune = tune
         self.highlight = highlight
         self.cursorID = cursorID
@@ -41,11 +50,12 @@ public struct ScoreView: View {
         self._zoom = zoom
         self.followEnabled = followEnabled
         self.onTapNote = onTapNote
+        self.isActive = isActive
     }
 
     public var body: some View {
         GeometryReader { geo in
-            let score = engravedScore(for: geo.size.width)
+            let score = memo.score
             let version = memo.version
             let active = activeSystem(in: score)
             ScrollViewReader { proxy in
@@ -100,6 +110,23 @@ public struct ScoreView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.2), value: followSuspended)
+                .allowsHitTesting(!memo.isLoading)
+                .overlay {
+                    if memo.isLoading {
+                        ZStack {
+                            Color.white
+                            ProgressView("楽譜を準備中")
+                        }
+                    }
+                }
+                .onAppear { requestLayout(for: geo.size.width) }
+                .onChange(of: geo.size.width) { _, width in requestLayout(for: width) }
+                .onChange(of: zoom) { _, _ in requestLayout(for: geo.size.width) }
+                .onChange(of: tune.source) { _, _ in requestLayout(for: geo.size.width) }
+                .onChange(of: tune.index) { _, _ in requestLayout(for: geo.size.width) }
+                .onChange(of: isActive) { _, active in
+                    if active { requestLayout(for: geo.size.width) }
+                }
             }
         }
         .background(Color.white)
@@ -154,17 +181,42 @@ public struct ScoreView: View {
         highlight.filter { score.targets[$0]?.system == i }
     }
 
-    private func engravedScore(for viewWidth: CGFloat) -> EngravedScore {
+    private func requestLayout(for viewWidth: CGFloat) {
+        guard isActive else { return }
         let w = max(viewWidth, 160)
         let z = clampZoom(zoom)
-        let key = "\(tune.index)#\(tune.source.hashValue)#\(Int(w))#\(Int((z * 100).rounded()))"
-        if memo.key == key { return memo.score }
-        // レイアウト幅を 1/z にしてから z 倍 → 表示幅は常に viewWidth
-        memo.score = ScoreEngraver.engrave(tune, width: w / z).scaled(by: z)
-        memo.key = key
-        memo.version += 1
-        return memo.score
+        if memo.source == tune.source, memo.tuneIndex == tune.index,
+           memo.width == w, memo.zoom == z { return }
+        memo.work?.cancel()
+        memo.generation += 1
+        let generation = memo.generation
+        memo.source = tune.source
+        memo.tuneIndex = tune.index
+        memo.width = w
+        memo.zoom = z
+        if let cached = ScoreLayoutCache.shared.cachedScore(for: tune, width: w, zoom: z) {
+            memo.score = cached
+            memo.version += 1
+            memo.isLoading = false
+            return
+        }
+        memo.isLoading = true
+        let tune = self.tune
+        let memo = self.memo
+        let work = DispatchWorkItem {
+            let result = ScoreLayoutCache.shared.score(for: tune, width: w, zoom: z)
+            DispatchQueue.main.async {
+                guard memo.generation == generation else { return }
+                memo.score = result
+                memo.version += 1
+                memo.isLoading = false
+                memo.work = nil
+            }
+        }
+        memo.work = work
+        ScoreMemo.queue.async(execute: work)
     }
+
 }
 
 /// 1 段ぶんの描画。ハイライト・カーソルが変わった段だけ再描画する。
@@ -182,13 +234,41 @@ private struct SystemRow: View, Equatable {
 
     var body: some View {
         let band = score.systems[index].band
-        Canvas { gc, _ in
-            gc.withCGContext { cg in
-                ScorePainter.drawYDown(score, in: cg, highlight: highlight,
-                                       cursorID: cursorID, system: index)
+        ZStack {
+            Canvas { gc, _ in
+                gc.withCGContext { cg in
+                    ScorePainter.drawCursorYDown(score, in: cg, cursorID: cursorID, system: index)
+                }
+            }
+            StaticSystemRow(score: score, index: index, version: version)
+                .equatable()
+            Canvas { gc, _ in
+                gc.withCGContext { cg in
+                    ScorePainter.drawHighlightsYDown(score, in: cg, highlight: highlight, system: index)
+                }
             }
         }
         .frame(width: band.width, height: band.height)
+    }
+}
+
+/// Playback changes only the surrounding layers. Keep the staff, beams and
+/// text in their own display list so SwiftUI can reuse them on cursor updates.
+private struct StaticSystemRow: View, Equatable {
+    let score: EngravedScore
+    let index: Int
+    let version: Int
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.index == b.index && a.version == b.version
+    }
+
+    var body: some View {
+        Canvas { gc, _ in
+            gc.withCGContext { cg in
+                ScorePainter.drawYDown(score, in: cg, highlight: [], cursorID: nil, system: index)
+            }
+        }
     }
 }
 

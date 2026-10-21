@@ -1,5 +1,62 @@
 import Combine
 import Foundation
+
+/// The complete document preparation stage has no UIKit or model mutations.
+/// It is shared by initial restore, file/sample/library opens and draft apply.
+enum StudioDocumentPreparation {
+    private final class Entry {
+        let document: Document
+        init(_ document: Document) { self.document = document }
+    }
+    private static let cache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 3
+        cache.totalCostLimit = 16 * 1024 * 1024
+        return cache
+    }()
+
+    struct Tune {
+        let sequence: PlaybackSequence
+        let instruments: [String: String]
+    }
+
+    struct Document {
+        let source: String
+        let book: ABCBook
+        let diagnostics: [ABCDiagnostic]
+        let firstTune: Tune?
+    }
+
+    static func tune(_ tune: ABCTune) -> Tune {
+        let instruments = Dictionary(uniqueKeysWithValues: tune.voices.map { voice in
+            (voice.id, Instruments.namedInstrument(forPartName: voice.name)?.id
+                ?? (voice.isPercussion ? "drums" : "piano"))
+        })
+        return Tune(sequence: ABCSequencer.sequence(tune), instruments: instruments)
+    }
+
+    static func document(_ abc: String) -> Document? {
+        let key = abc as NSString
+        if let entry = cache.object(forKey: key) { return entry.document }
+        let normalized = abc.replacingOccurrences(of: "\\r\\n?", with: "\n", options: .regularExpression)
+        guard !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let parsed = ABCBeaming.apply(to: ABCParser.parse(normalized))
+        let diagnostics = (parsed.diagnostics + ABCDiagnostics.validate(normalized))
+            .sorted { ($0.line, $0.severity == .error ? 0 : 1) < ($1.line, $1.severity == .error ? 0 : 1) }
+        let result = Document(source: normalized, book: parsed, diagnostics: diagnostics,
+                              firstTune: parsed.tunes.first.map(Self.tune))
+        let elements = parsed.tunes.reduce(0) { sum, tune in
+            sum + tune.voices.reduce(0) { $0 + $1.elements.count }
+        }
+        let events = result.firstTune?.sequence.tracks.reduce(0) { $0 + $1.events.count } ?? 0
+        cache.setObject(Entry(result), forKey: key,
+                        cost: normalized.utf8.count + elements * 256 + events * 80)
+        return result
+    }
+
+}
+
+#if canImport(UIKit)
 import MediaPlayer
 import UIKit
 
@@ -17,7 +74,13 @@ final class PlaybackCursor: ObservableObject {
 
 /// アプリ全体の状態。ABCソースのパース・音色割当・再生・入出力をまとめる。
 final class StudioModel: ObservableObject {
-    @Published var source: String = ""
+    @Published var source: String = "" {
+        didSet {
+            sourceLineCount = SourceSyntax.lineCount(in: source)
+            if isOpening { cancelOpening() }
+        }
+    }
+    private(set) var sourceLineCount = 1
     @Published var sourceName: String = ""
     @Published var book: ABCBook?
     @Published var selectedTune = 0
@@ -84,6 +147,11 @@ K:C
     private var sequence: PlaybackSequence?
     private var engineObserver: AnyCancellable?
     private var remoteInstalled = false
+    private var didRestore = false
+    @Published private(set) var isOpening = false
+    private var openGeneration = 0
+    private var openWork: DispatchWorkItem?
+    private let documentQueue = DispatchQueue(label: "jp.porari.abcstudio.documents", qos: .userInitiated)
 
     var tune: ABCTune? {
         guard let book, book.tunes.indices.contains(selectedTune) else { return nil }
@@ -123,12 +191,17 @@ K:C
     // MARK: - 読み込み
 
     func restore() {
+        guard !didRestore else { return }
+        didRestore = true
         refreshLibrary()
+        // A file opened at launch takes precedence over restoring the old tab.
+        guard !isOpening else { return }
         guard let abc = UserDefaults.standard.string(forKey: "lastABC") else {
-            loadABC(Self.example, filename: "", persist: false)
+            openForDisplay(filename: "", persist: false, read: { Self.example })
             return
         }
-        loadABC(abc, filename: UserDefaults.standard.string(forKey: "lastFilename") ?? "", persist: false)
+        openForDisplay(filename: UserDefaults.standard.string(forKey: "lastFilename") ?? "",
+                       persist: false, read: { abc })
     }
 
     /// インポートできるファイルサイズの上限(ABC テキストとしては十分大きい)。
@@ -159,15 +232,15 @@ K:C
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             toast("クリップボードに ABC テキストがありません"); return
         }
-        loadABC(text, filename: "クリップボード")
+        openForDisplay(filename: "クリップボード", read: { text })
     }
 
     /// バンドル同梱のサンプル曲(Samples/*.abc)
-    var samples: [(name: String, url: URL)] {
+    lazy var samples: [(name: String, url: URL)] = {
         (Bundle.main.urls(forResourcesWithExtension: "abc", subdirectory: "Samples") ?? [])
             .map { ($0.deletingPathExtension().lastPathComponent, $0) }
             .sorted { $0.name < $1.name }
-    }
+    }()
 
     func loadSample(_ url: URL) {
         do {
@@ -183,18 +256,31 @@ K:C
         loadABC(source, filename: sourceName)
     }
 
+    typealias PreparedTune = StudioDocumentPreparation.Tune
+    private typealias PreparedDocument = StudioDocumentPreparation.Document
+
+    private static func prepareTune(_ tune: ABCTune) -> PreparedTune {
+        StudioDocumentPreparation.tune(tune)
+    }
+
+    private static func prepareDocument(_ abc: String) -> PreparedDocument? {
+        StudioDocumentPreparation.document(abc)
+    }
+
     func loadABC(_ abc: String, filename: String, persist: Bool = true) {
-        let normalized = abc.replacingOccurrences(of: "\r\n?", with: "\n", options: .regularExpression)
-        guard normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-            toast("ABC の内容が空です"); return
-        }
+        cancelOpening()
+        lintTask?.cancel()
+        guard let document = Self.prepareDocument(abc) else { toast("ABC の内容が空です"); return }
+        apply(document, filename: filename, persist: persist)
+    }
+
+    private func apply(_ document: PreparedDocument, filename: String, persist: Bool) {
+        let normalized = document.source
         source = normalized
         sourceName = filename
-        var parsed = ABCParser.parse(normalized)
-        parsed = ABCBeaming.apply(to: parsed)
+        let parsed = document.book
         book = parsed
-        diagnostics = (parsed.diagnostics + ABCDiagnostics.validate(normalized))
-            .sorted { ($0.line, $0.severity == .error ? 0 : 1) < ($1.line, $1.severity == .error ? 0 : 1) }
+        diagnostics = document.diagnostics
         highlight = []
         cursorID = nil
         guard !parsed.tunes.isEmpty else {
@@ -212,7 +298,7 @@ K:C
             updateNowPlaying()
             return
         }
-        selectTune(0)
+        selectTune(0, prepared: document.firstTune)
         if diagnostics.contains(where: { $0.severity == .warning }) {
             status = "読み込み完了（警告あり）"
             toast("警告があります。「エディタ」タブで確認できます")
@@ -224,11 +310,105 @@ K:C
         updateNowPlaying()
     }
 
+    /// UI requests share one generation so older reads/parses never replace a
+    /// newer selection. Disk I/O, parsing and sequencing stay off the UI queue.
+    private func openForDisplay(filename: String, play: Bool = false, persist: Bool = true,
+                                read: @escaping () throws -> String,
+                                completion: ((Bool) -> Void)? = nil) {
+        cancelOpening()
+        lintTask?.cancel()
+        let generation = openGeneration
+        isOpening = true
+        let work = DispatchWorkItem { [weak self] in
+            do {
+                let document = Self.prepareDocument(try read())
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.openGeneration == generation else { return }
+                    self.isOpening = false
+                    self.openWork = nil
+                    guard let document else {
+                        self.toast("ABC の内容が空です")
+                        completion?(false)
+                        return
+                    }
+                    self.apply(document, filename: filename, persist: persist)
+                    let success = self.tune != nil && !self.diagnostics.contains { $0.severity == .error }
+                    if play, success { self.engine.play(); self.status = "再生中"; self.updateNowPlaying() }
+                    completion?(success)
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.openGeneration == generation else { return }
+                    self.isOpening = false
+                    self.openWork = nil
+                    self.importError = error.localizedDescription
+                    completion?(false)
+                }
+            }
+        }
+        openWork = work
+        documentQueue.async(execute: work)
+    }
+
+    private func cancelOpening() {
+        openGeneration += 1
+        openWork?.cancel()
+        openWork = nil
+        if isOpening { isOpening = false }
+    }
+
+    func applySourceForDisplay(completion: @escaping (Bool) -> Void) {
+        let draft = source
+        openForDisplay(filename: sourceName, read: { draft }, completion: completion)
+    }
+
+    func loadSampleForDisplay(_ url: URL) {
+        openForDisplay(filename: url.lastPathComponent, read: { try String(contentsOf: url, encoding: .utf8) })
+    }
+
+    func openLibraryItemForDisplay(_ item: LibraryItem, play: Bool = false) {
+        let store = libraryStore
+        openForDisplay(filename: item.name, play: play, read: { try store.read(item) }) { [weak self] success in
+            if !success { self?.refreshLibrary() }
+        }
+    }
+
+    func importFileForDisplay(_ url: URL) {
+        openForDisplay(filename: url.lastPathComponent, read: {
+            let access = url.startAccessingSecurityScopedResource()
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: url)
+            guard data.count <= Self.maxImportBytes else { throw ImportFailure.tooLarge }
+            guard let abc = String(data: data, encoding: .utf8)
+                    ?? String(data: data, encoding: .utf16) else { throw ImportFailure.unsupportedEncoding }
+            return abc
+        })
+    }
+
+    func selectTuneForDisplay(_ index: Int) {
+        guard let book, book.tunes.indices.contains(index) else { return }
+        cancelOpening()
+        let generation = openGeneration
+        let tune = book.tunes[index]
+        isOpening = true
+        let work = DispatchWorkItem { [weak self] in
+            let prepared = Self.prepareTune(tune)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.openGeneration == generation else { return }
+                self.isOpening = false
+                self.openWork = nil
+                self.selectTune(index, prepared: prepared)
+            }
+        }
+        openWork = work
+        documentQueue.async(execute: work)
+    }
+
     private var assignmentPartNames: [String: String] = [:]
     /// パート音量を同じ ID・名前の声部へ引き継ぐための対応表。
     private var partVolumeNames: [String: String] = [:]
 
-    func selectTune(_ index: Int) {
+    func selectTune(_ index: Int, prepared: PreparedTune? = nil) {
         guard let book, book.tunes.indices.contains(index) else { return }
         selectedTune = index
         let tune = book.tunes[index]
@@ -237,7 +417,8 @@ K:C
         for v in tune.voices {
             next[v.id] = assignmentPartNames[v.id] == v.name ? assignments[v.id] : nil
             if next[v.id] == nil {
-                next[v.id] = Instruments.namedInstrument(forPartName: v.name)?.id ?? (v.isPercussion ? "drums" : "piano")
+                next[v.id] = prepared?.instruments[v.id]
+                    ?? Instruments.namedInstrument(forPartName: v.name)?.id ?? (v.isPercussion ? "drums" : "piano")
             }
             let volume = partVolumeNames[v.id] == v.name ? partVolumes[v.id] : nil
             nextVolumes[v.id] = Self.clampVolume(volume ?? 1)
@@ -251,7 +432,7 @@ K:C
         if let soloVoiceID, !voiceIDs.contains(soloVoiceID) {
             self.soloVoiceID = nil
         }
-        rebuildSequence()
+        rebuildSequence(prepared?.sequence)
         updateNowPlaying()
     }
 
@@ -265,10 +446,10 @@ K:C
         return map
     }
 
-    private func rebuildSequence() {
+    private func rebuildSequence(_ prepared: PlaybackSequence? = nil) {
         guard let tune else { return }
         engine.stop()
-        sequence = ABCSequencer.sequence(tune)
+        sequence = prepared ?? ABCSequencer.sequence(tune)
         engine.load(sequence!, instruments: instrumentMap())
         applyGains()
         engine.setMasterVolume(Float(masterVolume))
@@ -276,7 +457,7 @@ K:C
 
     func assign(_ voiceID: String, instrument: String) {
         assignments[voiceID] = instrument
-        rebuildSequence()
+        rebuildSequence(sequence)
         toast("次の再生から音色を変更します")
     }
 
@@ -333,6 +514,7 @@ K:C
     }
 
     func togglePlay() {
+        guard !isOpening || engine.isPlaying else { return }
         guard tune != nil else { toast("楽譜を読み込んでください"); return }
         if engine.isPlaying {
             engine.pause()
@@ -353,12 +535,14 @@ K:C
     }
 
     func seek(to fraction: Double) {
+        guard !isOpening else { return }
         engine.seek(toFraction: fraction)
         updateNowPlaying()
     }
 
     /// 楽譜上の音符タップ → その位置へシーク
     func seekToElement(_ elementID: Int) {
+        guard !isOpening else { return }
         engine.seekToElement(elementID)
         status = engine.isPlaying ? "再生中" : "シーク"
         updateNowPlaying()
@@ -682,3 +866,5 @@ K:C
         }
     }
 }
+
+#endif

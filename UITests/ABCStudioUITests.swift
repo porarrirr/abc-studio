@@ -27,6 +27,10 @@ final class ABCStudioUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-lastABC", quoted, "-lastFilename", "\"\""] + extra
         app.launch()
+        let play = app.buttons["再生"]
+        XCTAssertTrue(play.waitForExistence(timeout: 5))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: play)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
         return app
     }
 
@@ -45,6 +49,36 @@ final class ABCStudioUITests: XCTestCase {
     [V:harmony] [CEG]2 [DFA]2 | [EGc]2 [CEG]2 | [FAc]2 [CEG]2 | [B,DG]4 |
     [V:bass] C,2 G,2 | E,2 C,2 | F,2 C,2 | G,4 |
     """
+
+    func testRepeatedTabChangesKeepDraftUndoAndMixerState() throws {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["ABCを編集"].tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        editor.tap()
+        editor.typeText(" retained-draft")
+        let draft = try XCTUnwrap(editor.value as? String)
+        app.toolbars.buttons["完了"].tap()
+        app.buttons["楽器・音量"].tap()
+        let volume = app.sliders["part-volume-melody"]
+        volume.adjust(toNormalizedSliderPosition: 0.3)
+        let chosenVolume = volume.value as? String
+        for _ in 0..<3 {
+            app.buttons["ライブラリ"].tap()
+            XCTAssertTrue(app.textFields["library-search"].waitForExistence(timeout: 3))
+            app.buttons["楽譜"].tap()
+            XCTAssertTrue(app.otherElements["scoreView"].waitForExistence(timeout: 3))
+            app.buttons["楽器・音量"].tap()
+            XCTAssertEqual(app.sliders["part-volume-melody"].value as? String, chosenVolume)
+            app.buttons["ABCを編集"].tap()
+            XCTAssertEqual(app.textViews.firstMatch.value as? String, draft)
+        }
+        app.textViews.firstMatch.tap()
+        app.toolbars.buttons["取り消す"].tap()
+        XCTAssertNotEqual(app.textViews.firstMatch.value as? String, draft,
+                          "タブ移動後も同じエディタの取り消し履歴を使える")
+        app.toolbars.buttons["完了"].tap()
+    }
 
     func testPlaybackSurvivesTabSwitchesMixerScrollingAndSeeking() {
         let app = launch(abc: Self.ensemble + "\n[V:melody] " + String(repeating: "C D E F | ", count: 32))
