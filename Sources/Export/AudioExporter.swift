@@ -28,6 +28,8 @@ public enum AudioExporter {
     public static func render(sequence: PlaybackSequence,
                               instruments: [String: Instrument],
                               trackGains: [String: Float] = [:],
+                              positions: [String: StagePosition] = [:],
+                              headphoneSettings: HeadphoneSettings = HeadphoneSettings(),
                               masterVolume: Float = 1,
                               speedPercent: Int = 100,
                               filename: String = "ABCStudio-render.wav") throws -> URL {
@@ -37,6 +39,7 @@ public enum AudioExporter {
         guard outSeconds <= maxRenderSeconds else { throw RenderError.tooLong }
 
         let font = SoundFontPlayer()
+        let spatializer = OrchestraSpatializer()
         let format = font.format
         let engine = AVAudioEngine()
         let auxMixer = AVAudioMixerNode()
@@ -55,7 +58,7 @@ public enum AudioExporter {
         engine.attach(reverb)
         engine.attach(limiter)
         reverb.loadFactoryPreset(.mediumHall)
-        reverb.wetDryMix = 18
+        reverb.wetDryMix = headphoneSettings.reverbMix
         engine.connect(auxMixer, to: reverb, format: format)
         engine.connect(reverb, to: limiter, format: format)
         engine.connect(limiter, to: engine.mainMixerNode, format: format)
@@ -76,15 +79,8 @@ public enum AudioExporter {
             node.volume = gain.isFinite ? min(1, max(0, gain)) : 1
             nodes.append(node)
         }
-        for (index, track) in sequence.tracks.enumerated() {
-            let instrument = instruments[track.voiceID]
-                ?? (track.isPercussion
-                    ? (Instruments.byID("drums") ?? Instruments.all[0])
-                    : Instruments.all[0])
-            nodes[index].pan = PlaybackEngine.trackPan(index: index,
-                                                       isPercussion: instrument.isDrums)
-        }
         try engine.start()
+        defer { engine.stop() }
         for node in nodes { node.play() }
 
         // 全イベントを絶対サンプル時刻でスケジュール(先読み不要、一括でよい)
@@ -103,12 +99,15 @@ public enum AudioExporter {
                 let offsetSec = sequence.seconds(forBeat: event.startBeat) / rate + leadIn
                 let eventSec = (sequence.seconds(forBeat: event.startBeat + event.durationBeats)
                                 - sequence.seconds(forBeat: event.startBeat)) / rate
-                guard let buffer = font.makeBuffer(dir: instrument.soundFontDir,
+                guard let source = font.makeBuffer(dir: instrument.soundFontDir,
                                                    midi: instrument.soundingNote(event.midi),
                                                    seconds: eventSec,
                                                    velocity: event.velocity) else {
                     continue
                 }
+                let position = positions[track.voiceID]
+                    ?? .orchestral(instrument: instrument, partName: track.name)
+                let buffer = spatializer.render(source, at: position, settings: headphoneSettings)
                 let time = AVAudioTime(
                     sampleTime: AVAudioFramePosition((offsetSec * format.sampleRate).rounded()),
                     atRate: format.sampleRate)
@@ -117,7 +116,7 @@ public enum AudioExporter {
             }
         }
 
-        let totalFrames = AVAudioFrameCount((outSeconds + leadIn + 1.0) * format.sampleRate)
+        let totalFrames = AVAudioFrameCount((outSeconds + leadIn + font.sustainTail + font.releaseFade + 0.35) * format.sampleRate)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: url)

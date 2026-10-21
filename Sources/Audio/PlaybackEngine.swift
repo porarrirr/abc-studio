@@ -35,6 +35,9 @@ public final class PlaybackEngine: ObservableObject {
     /// voiceID → 0.0...1.0 (パート音量とミュート/ソロ反映済み)
     private var trackGains: [String: Float] = [:]
     private let soundFont = SoundFontPlayer()
+    private let spatializer = OrchestraSpatializer()
+    private var headphoneSettings = HeadphoneSettings()
+    private var trackPositions: [StagePosition] = []
     /// Shared ambience: playerNodes → auxMixer → reverb → limiter → mainMixer.
     /// Effects have a single input bus, so the tracks must be summed by a
     /// mixer node first; a light hall makes the dry samples sit in a room,
@@ -56,7 +59,8 @@ public final class PlaybackEngine: ObservableObject {
     private var startSec100: TimeInterval = 0              // seconds(forBeat: run start)
     private var timer: DispatchSourceTimer?
     private var sessionConfigured = false
-    private let leadIn: TimeInterval = 0.08
+    // All buffers are queued before this common host-clock start is chosen.
+    private let leadIn: TimeInterval = 0.01
 
     /// 先読みスケジューリングの窓(出力秒)。この先のイベントは随時追加される。
     private let lookaheadSec: TimeInterval = 12
@@ -92,6 +96,7 @@ public final class PlaybackEngine: ObservableObject {
         let track: Int
         let event: PlaybackEvent
         let instrument: Instrument
+        let position: StagePosition
         let seconds: Double
         let offset: Double
         let elapsed: Double
@@ -124,7 +129,8 @@ public final class PlaybackEngine: ObservableObject {
 
     /// Prepares audio for a sequence. `instruments` maps voiceID → Instrument;
     /// missing voices fall back to piano (drums for percussion tracks).
-    public func load(_ sequence: PlaybackSequence, instruments: [String: Instrument]) {
+    public func load(_ sequence: PlaybackSequence, instruments: [String: Instrument],
+                     positions: [String: StagePosition] = [:]) {
         haltNodes()
         stopTimer()
         isPlaying = false
@@ -132,7 +138,7 @@ public final class PlaybackEngine: ObservableObject {
         for node in playerNodes { engine.detach(node) }
         if !effectsConnected {
             reverb.loadFactoryPreset(.mediumHall)
-            reverb.wetDryMix = 18
+            reverb.wetDryMix = headphoneSettings.reverbMix
             engine.attach(auxMixer)
             engine.attach(reverb)
             engine.attach(limiter)
@@ -153,11 +159,8 @@ public final class PlaybackEngine: ObservableObject {
                     ? (Instruments.byID("drums") ?? Instruments.all[0])
                     : Instruments.all[0])
         }
-        // Spread ensemble tracks slightly so the mix isn't dead-center;
-        // percussion and the lead voice stay in the middle.
-        for (i, node) in playerNodes.enumerated() {
-            node.pan = Self.trackPan(index: i,
-                                     isPercussion: trackInstruments[i].isDrums)
+        trackPositions = sequence.tracks.enumerated().map { index, track in
+            positions[track.voiceID] ?? .orchestral(instrument: trackInstruments[index], partName: track.name)
         }
         applyTrackGains()
         duration = seconds(forBeat: sequence.totalBeats)
@@ -177,6 +180,7 @@ public final class PlaybackEngine: ObservableObject {
         for node in playerNodes { engine.detach(node) }
         playerNodes = []
         trackInstruments = []
+        trackPositions = []
         trackGains = [:]
         schedIdx = []
         schedHorizon = 0
@@ -200,12 +204,55 @@ public final class PlaybackEngine: ObservableObject {
         set(6, 0)       // Master Gain (dB)
     }
 
-    /// Alternating ±spread for tracks past the lead voice (index 0), keeping
-    /// percussion centred. Returns a player-node pan in -1...1.
-    static func trackPan(index: Int, isPercussion: Bool) -> Float {
-        guard index > 0, !isPercussion else { return 0 }
-        let table: [Float] = [-0.22, 0.22, -0.35, 0.35, -0.14, 0.14, -0.28, 0.28]
-        return table[(index - 1) % table.count]
+    /// Rebuild the lookahead at the current beat after a stage edit. Slider
+    /// edits commit on release, avoiding repeated restarts during a drag.
+    public func setTrackPositions(_ positions: [String: StagePosition]) {
+        guard let sequence else { return }
+        let next = sequence.tracks.enumerated().map { index, track in
+            positions[track.voiceID] ?? .orchestral(instrument: trackInstruments[index], partName: track.name)
+        }
+        guard next != trackPositions else { return }
+        let beat = isPlaying ? currentBeat() : positionBeat
+        trackPositions = next
+        if isPlaying {
+            haltNodes()
+            scheduleEvents(fromBeat: beat)
+        }
+    }
+
+    public func setHeadphoneSettings(_ settings: HeadphoneSettings) {
+        guard settings != headphoneSettings else { return }
+        let beat = isPlaying ? currentBeat() : positionBeat
+        headphoneSettings = settings
+        reverb.wetDryMix = settings.reverbMix
+        if isPlaying {
+            haltNodes()
+            scheduleEvents(fromBeat: beat)
+        }
+    }
+
+    /// Pause the main graph before a separate audition uses the audio session.
+    /// Its delayed session release must not interrupt the audition midway.
+    func suspendForAudition() {
+        if isPlaying { pause() }
+        shutdownWork?.cancel()
+        haltNodes()
+        engine.stop()
+    }
+
+    /// End an audition before returning control to the main player. Release
+    /// now, not on a delayed timer that could deactivate the next playback.
+    func finishAudition() {
+        stop()
+        shutdownWork?.cancel()
+        engine.stop()
+        onCursor = nil
+        onFinish = nil
+        #if os(iOS)
+        if sessionConfigured {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        #endif
     }
 
     // MARK: - Volume
@@ -235,12 +282,14 @@ public final class PlaybackEngine: ObservableObject {
     public func play() {
         guard let seq = sequence, seq.totalBeats > 0, !isPlaying else { return }
         shutdownWork?.cancel()
-        activateSession()
-        startEngineIfNeeded()
         if positionBeat >= seq.totalBeats { positionBeat = 0 }
         haltNodes()   // 自然終了直後の余韻バッファなど、残っている queue を掃除
+        // Decode while the main thread activates the audio session and engine.
+        // Scheduling completion returns to main, after the engine has started.
         scheduleEvents(fromBeat: positionBeat)
         isPlaying = true
+        activateSession()
+        startEngineIfNeeded()
     }
 
     public func pause() {
@@ -367,6 +416,7 @@ public final class PlaybackEngine: ObservableObject {
                 let start = seconds(forBeat: event.startBeat)
                 requests.append(BufferRequest(
                     track: index, event: event, instrument: trackInstruments[index],
+                    position: trackPositions[index],
                     seconds: (seconds(forBeat: event.startBeat + event.durationBeats) - start) / rate,
                     offset: max(0, (start - startSec100) / rate),
                     elapsed: max(0, (startSec100 - start) / rate)))
@@ -379,6 +429,7 @@ public final class PlaybackEngine: ObservableObject {
         prepInFlight = true
         let generation = prepGeneration
         let trackCount = playerNodes.count
+        let settings = headphoneSettings
         prepQueue.async { [weak self] in
             guard let self else { return }
             var buffers: [(Int, AVAudioPCMBuffer, AVAudioTime)] = []
@@ -398,32 +449,48 @@ public final class PlaybackEngine: ObservableObject {
                     }
                 }
             }
-            for request in requests {
-                self.prepLock.lock()
-                let stale = self.prepGeneration != generation
-                self.prepLock.unlock()
-                if stale { return }
-                let inst = request.instrument
-                let generated: AVAudioPCMBuffer?
-                if let makeBuffer = self.makeBufferOverride {
-                    generated = makeBuffer(inst.soundFontDir, inst.soundingNote(request.event.midi),
-                                           request.seconds, request.event.velocity)
-                } else {
-                    generated = self.soundFont.makeBuffer(
-                        dir: inst.soundFontDir, midi: inst.soundingNote(request.event.midi),
-                        seconds: request.seconds, velocity: request.event.velocity)
+            // Four independent decoders bound both peak memory and thread use.
+            // Keep injected generators serial so transport tests can gate a run.
+            let workers = self.makeBufferOverride == nil ? min(4, requests.count) : min(1, requests.count)
+            let resultLock = NSLock()
+            var prepared = Array<(Int, AVAudioPCMBuffer, AVAudioTime)?>(repeating: nil,
+                                                                      count: requests.count)
+            if workers > 0 {
+                DispatchQueue.concurrentPerform(iterations: workers) { worker in
+                    for index in stride(from: worker, to: requests.count, by: workers) {
+                        self.prepLock.lock()
+                        let stale = self.prepGeneration != generation
+                        self.prepLock.unlock()
+                        if stale { return }
+                        let request = requests[index]
+                        let inst = request.instrument
+                        let generated: AVAudioPCMBuffer?
+                        if let makeBuffer = self.makeBufferOverride {
+                            generated = makeBuffer(inst.soundFontDir, inst.soundingNote(request.event.midi),
+                                                   request.seconds, request.event.velocity)
+                        } else {
+                            generated = self.soundFont.makeBuffer(
+                                dir: inst.soundFontDir, midi: inst.soundingNote(request.event.midi),
+                                seconds: request.seconds, velocity: request.event.velocity)
+                        }
+                        guard let generated else { continue }
+                        var buffer = self.spatializer.render(generated, at: request.position, settings: settings)
+                        if request.elapsed > 0 {
+                            let frame = AVAudioFramePosition((request.elapsed * Self.sampleRate).rounded())
+                            guard let tail = self.subBuffer(buffer, from: frame) else { continue }
+                            buffer = tail
+                        }
+                        let time = AVAudioTime(
+                            sampleTime: AVAudioFramePosition((request.offset * Self.sampleRate).rounded()),
+                            atRate: Self.sampleRate)
+                        resultLock.lock()
+                        prepared[index] = (request.track, buffer, time)
+                        resultLock.unlock()
+                    }
                 }
-                guard var buffer = generated else { continue }
-                if request.elapsed > 0 {
-                    let frame = AVAudioFramePosition((request.elapsed * Self.sampleRate).rounded())
-                    guard let tail = self.subBuffer(buffer, from: frame) else { continue }
-                    buffer = tail
-                }
-                let time = AVAudioTime(
-                    sampleTime: AVAudioFramePosition((request.offset * Self.sampleRate).rounded()),
-                    atRate: Self.sampleRate)
-                buffers.append((request.track, buffer, time))
             }
+            // Preserve event order regardless of which decoder finished first.
+            buffers.append(contentsOf: prepared.compactMap { $0 })
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.prepGeneration == generation, self.isPlaying else { return }
                 self.prepInFlight = false

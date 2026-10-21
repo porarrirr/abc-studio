@@ -40,13 +40,23 @@ public final class SoundFontPlayer {
     private var dirIndex: [String: DirIndex] = [:]
     private var dirURLs: [String: URL?] = [:]
     private var missingDirs = Set<String>()
-    /// Decoded (format-converted) source samples, keyed "dir|fileMidi".
-    private let decodedCache = NSCache<NSString, AVAudioPCMBuffer>()
+    private final class DecodedSample {
+        let buffer: AVAudioPCMBuffer
+        let complete: Bool
+        init(_ buffer: AVAudioPCMBuffer, complete: Bool) {
+            self.buffer = buffer
+            self.complete = complete
+        }
+    }
+    /// Largest decoded prefix per source note; complete samples satisfy any length.
+    private let decodedCache = NSCache<NSString, DecodedSample>()
     private final class PitchedSample {
         let buffer: AVAudioPCMBuffer
         let peak: Float
-        init(_ buffer: AVAudioPCMBuffer) {
+        let complete: Bool
+        init(_ buffer: AVAudioPCMBuffer, complete: Bool) {
             self.buffer = buffer
+            self.complete = complete
             var maximum: Float = 0
             for channel in 0..<Int(buffer.format.channelCount) {
                 var value: Float = 0
@@ -90,12 +100,13 @@ public final class SoundFontPlayer {
     /// Returned buffers are shared and must be treated as read-only.
     public func makeBuffer(dir: String, midi: Int, seconds: TimeInterval, velocity: Double)
         -> AVAudioPCMBuffer? {
-        guard let sample = pitchedBuffer(dir: dir, midi: midi) else { return nil }
-        let source = sample.buffer
         let clamped = min(max(seconds, minimumDuration), maximumDuration)
         let wanted = max(1, AVAudioFrameCount((clamped * Self.sampleRate).rounded(.up)))
         let tailFrames = AVAudioFrameCount((sustainTail * Self.sampleRate).rounded(.down))
-        let frames = min(wanted + tailFrames, source.frameLength)
+        let requestedFrames = wanted + tailFrames
+        guard let sample = pitchedBuffer(dir: dir, midi: midi, frames: requestedFrames) else { return nil }
+        let source = sample.buffer
+        let frames = min(requestedFrames, source.frameLength)
         var gain = Float(velocity / 127.0) * volumeMultiplier
         let fadeFrames = AVAudioFrameCount((releaseFade * Self.sampleRate).rounded(.down))
         let fadeStart = frames > fadeFrames ? Int(frames - fadeFrames) : 0
@@ -229,23 +240,30 @@ public final class SoundFontPlayer {
     // MARK: - Buffer pipeline
 
     /// Resampled (pitch-shifted) buffer for a target midi, cached per (dir, midi).
-    private func pitchedBuffer(dir: String, midi: Int) -> PitchedSample? {
+    private func pitchedBuffer(dir: String, midi: Int, frames: AVAudioFrameCount) -> PitchedSample? {
         let key = "\(dir)|\(midi)" as NSString
         lock.lock()
         let hit = pitchedCache.object(forKey: key)
         lock.unlock()
-        if let hit = hit { return hit }
+        if let hit, hit.complete || hit.buffer.frameLength >= frames { return hit }
 
         let index = index(for: dir)
-        guard let nearest = nearestMidi(to: midi, in: index.midis),
-              let decoded = decodedBuffer(dir: dir, fileMidi: nearest, index: index) else {
-            return nil
-        }
+        guard let nearest = nearestMidi(to: midi, in: index.midis) else { return nil }
         let semitones = midi - nearest
-        let result = semitones == 0 ? decoded : resample(decoded, semitones: semitones)
-        let sample = PitchedSample(result)
+        // Decode only the prefix used by this event, including the interpolation
+        // neighbour needed when pitching down. Never decode a ten-second sample
+        // just to play a short note. Longer events extend the cached prefix
+        // without changing buffers that have already been scheduled.
+        let ratio = pow(2.0, Double(semitones) / 12.0)
+        let sourceFrames = AVAudioFrameCount(ceil(Double(frames) * ratio)) + 2
+        guard let decoded = decodedBuffer(dir: dir, fileMidi: nearest, index: index,
+                                          frames: sourceFrames) else { return nil }
+        let result = semitones == 0 ? decoded.buffer : resample(decoded.buffer, semitones: semitones)
+        let sample = PitchedSample(result, complete: decoded.complete)
         lock.lock()
-        pitchedCache.setObject(sample, forKey: key, cost: byteSize(of: result))
+        if (pitchedCache.object(forKey: key)?.buffer.frameLength ?? 0) < result.frameLength {
+            pitchedCache.setObject(sample, forKey: key, cost: byteSize(of: result))
+        }
         lock.unlock()
         return sample
     }
@@ -264,14 +282,14 @@ public final class SoundFontPlayer {
         return best
     }
 
-    /// MP3 file → PCM buffer in `format`, cached per (dir, fileMidi).
-    private func decodedBuffer(dir: String, fileMidi: Int, index: DirIndex)
-        -> AVAudioPCMBuffer? {
+    /// Decode the needed AAC/MP3 prefix into `format`, cached per source note.
+    private func decodedBuffer(dir: String, fileMidi: Int, index: DirIndex,
+                               frames: AVAudioFrameCount) -> DecodedSample? {
         let key = "\(dir)|\(fileMidi)" as NSString
         lock.lock()
         let hit = decodedCache.object(forKey: key)
         lock.unlock()
-        if let hit = hit { return hit }
+        if let hit, hit.complete || hit.buffer.frameLength >= frames { return hit }
 
         guard let fileName = index.fileNames[fileMidi],
               let base = directoryURL(dir) else { return nil }
@@ -281,11 +299,13 @@ public final class SoundFontPlayer {
             return nil
         }
         let srcFormat = audioFile.processingFormat
-        guard let raw = AVAudioPCMBuffer(pcmFormat: srcFormat,
-                                         frameCapacity: AVAudioFrameCount(audioFile.length)) else {
+        let requested = AVAudioFramePosition(ceil(Double(frames) * srcFormat.sampleRate / Self.sampleRate))
+        let count = AVAudioFrameCount(min(audioFile.length, requested))
+        guard count > 0, let raw = AVAudioPCMBuffer(pcmFormat: srcFormat,
+                                                   frameCapacity: count) else {
             return nil
         }
-        do { try audioFile.read(into: raw) } catch {
+        do { try audioFile.read(into: raw, frameCount: count) } catch {
             print("[SoundFontPlayer] decode failed for \(url.lastPathComponent): \(error)")
             return nil
         }
@@ -294,10 +314,13 @@ public final class SoundFontPlayer {
             guard let converted = convert(raw) else { return nil }
             result = converted
         }
+        let sample = DecodedSample(result, complete: audioFile.framePosition >= audioFile.length)
         lock.lock()
-        decodedCache.setObject(result, forKey: key, cost: byteSize(of: result))
+        if (decodedCache.object(forKey: key)?.buffer.frameLength ?? 0) < result.frameLength {
+            decodedCache.setObject(sample, forKey: key, cost: byteSize(of: result))
+        }
         lock.unlock()
-        return result
+        return sample
     }
 
     private func byteSize(of buffer: AVAudioPCMBuffer) -> Int {

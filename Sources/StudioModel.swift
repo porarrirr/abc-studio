@@ -110,6 +110,9 @@ final class StudioModel: ObservableObject {
     @Published var soloVoiceID: String?
     /// voiceID → パート音量 0...1
     @Published var partVolumes: [String: Double] = [:]
+    @Published private(set) var headphoneSettings = HeadphoneSettings()
+    private let headphoneDefaults: UserDefaults
+    @Published var stagePositions: [String: StagePosition] = [:]
     /// マスター音量 0...1
     @Published var masterVolume: Double = 1
     /// 曲全体のループ再生
@@ -167,7 +170,13 @@ K:C
         return (sourceName.isEmpty ? "" : sourceName + " · ") + "\(count) パート" + part
     }
 
-    init() {
+    init(headphoneDefaults: UserDefaults = .standard) {
+        self.headphoneDefaults = headphoneDefaults
+        if let data = headphoneDefaults.data(forKey: "headphoneSettings.v1"),
+           let settings = try? JSONDecoder().decode(HeadphoneSettings.self, from: data) {
+            headphoneSettings = settings
+        }
+        engine.setHeadphoneSettings(headphoneSettings)
         engineObserver = engine.$isPlaying.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }
         engine.onCursor = { [weak self] ids, anchor in
             self?.highlight = ids
@@ -289,6 +298,7 @@ K:C
             selectedTune = 0
             assignments = [:]
             partVolumes = [:]
+            stagePositions = [:]
             partVolumeNames = [:]
             mutedVoices = []
             soloVoiceID = nil
@@ -423,6 +433,9 @@ K:C
             let volume = partVolumeNames[v.id] == v.name ? partVolumes[v.id] : nil
             nextVolumes[v.id] = Self.clampVolume(volume ?? 1)
         }
+        stagePositions = stagePositions.filter { id, _ in
+            tune.voices.contains { $0.id == id && assignmentPartNames[id] == $0.name }
+        }
         assignments = next
         partVolumes = nextVolumes
         assignmentPartNames = Dictionary(uniqueKeysWithValues: tune.voices.map { ($0.id, $0.name) })
@@ -450,15 +463,45 @@ K:C
         guard let tune else { return }
         engine.stop()
         sequence = prepared ?? ABCSequencer.sequence(tune)
-        engine.load(sequence!, instruments: instrumentMap())
+        engine.load(sequence!, instruments: instrumentMap(), positions: stagePositions)
         applyGains()
         engine.setMasterVolume(Float(masterVolume))
     }
 
     func assign(_ voiceID: String, instrument: String) {
         assignments[voiceID] = instrument
+        stagePositions[voiceID] = nil
         rebuildSequence(sequence)
         toast("次の再生から音色を変更します")
+    }
+
+    func setHeadphoneSettings(_ settings: HeadphoneSettings) {
+        headphoneSettings = settings
+        engine.setHeadphoneSettings(settings)
+        if let data = try? JSONEncoder().encode(settings) {
+            headphoneDefaults.set(data, forKey: "headphoneSettings.v1")
+        }
+    }
+
+    func prepareHeadphoneAudition() {
+        if engine.isPlaying { togglePlay() }
+        engine.suspendForAudition()
+    }
+
+    func stagePosition(for voice: ABCVoice) -> StagePosition {
+        stagePositions[voice.id] ?? .orchestral(
+            instrument: Instruments.byID(assignments[voice.id] ?? "") ?? Instruments.all[0],
+            partName: voice.name)
+    }
+
+    func setStagePosition(_ voiceID: String, position: StagePosition) {
+        stagePositions[voiceID] = position
+        engine.setTrackPositions(stagePositions)
+    }
+
+    func resetStagePositions() {
+        stagePositions = [:]
+        engine.setTrackPositions(stagePositions)
     }
 
     /// 声部ごとの実効音量(パート音量にソロ・ミュートを反映)
@@ -627,6 +670,8 @@ K:C
         status = "音声を書き出し中…"
         let instruments = instrumentMap()
         let gains = trackGains()
+        let positions = stagePositions
+        let headphoneSettings = headphoneSettings
         let volume = Float(masterVolume)
         let percent = speed
         let name = exportName("wav")
@@ -635,6 +680,8 @@ K:C
                 let url = try AudioExporter.render(sequence: seq,
                                                    instruments: instruments,
                                                    trackGains: gains,
+                                                   positions: positions,
+                                                   headphoneSettings: headphoneSettings,
                                                    masterVolume: volume,
                                                    speedPercent: percent,
                                                    filename: name)

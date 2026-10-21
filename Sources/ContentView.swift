@@ -47,6 +47,7 @@ struct ContentView: View {
     @EnvironmentObject private var model: StudioModel
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.verticalSizeClass) private var vSize
+    @State private var showHeadphoneTuning = false
     @State private var tab: StudioTab = .score
     @State private var visitedTabs: Set<StudioTab> = [.score]
     @State private var speedDrag: Double?
@@ -56,6 +57,10 @@ struct ContentView: View {
     @State private var pendingExport: (() -> Void)?
     @State private var showClearConfirm = false
     @State private var keyboardVisible = false
+    @State private var editorPasteRequest = 0
+    @State private var showEditorHelp = false
+    @State private var showEditorDiagnostics = false
+    @State private var pendingEditorDiagnostic: ABCDiagnostic?
     @State private var renamingItem: LibraryItem?
     @State private var renameText = ""
     @State private var deletingItem: LibraryItem?
@@ -73,7 +78,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             if !isCompact { sidebar }
             VStack(spacing: 0) {
-                header
+                if tab != .editor || !keyboardVisible { header }
                 paneContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
@@ -81,7 +86,7 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if !keyboardVisible {
                     VStack(spacing: 0) {
-                        playerBar
+                        if tab != .editor { playerBar }
                         if isCompact { bottomNavigation }
                     }
                     .background(StudioTheme.surface)
@@ -113,6 +118,35 @@ struct ContentView: View {
         .sheet(item: $model.shareFile) { ShareSheet(items: [$0.url]) }
         .sheet(isPresented: $showAbout) { AboutView() }
         .sheet(isPresented: $showPlaybackSettings) { playbackSettings }
+        .sheet(isPresented: $showEditorHelp) {
+            NavigationStack {
+                ScrollView {
+                    Text("X: 曲番号　T: 曲名　M: 拍子\nL: 基本音長　K: 調　V: パート\n\n例：C D E F | G A B c |")
+                        .font(.system(size: 14, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                }
+                .navigationTitle("ABC記譜法のヒント")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) {
+                    Button("閉じる") { showEditorHelp = false }
+                } }
+            }
+        }
+        .sheet(isPresented: $showEditorDiagnostics, onDismiss: {
+            if let diagnostic = pendingEditorDiagnostic {
+                pendingEditorDiagnostic = nil
+                model.jump(to: diagnostic)
+            }
+        }) {
+            NavigationStack {
+                ScrollView { diagnosticsPanel.padding(16) }
+                    .navigationTitle("記譜のチェック")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) {
+                        Button("閉じる") { showEditorDiagnostics = false }
+                    } }
+            }
+        }
         .sheet(isPresented: $showExport, onDismiss: {
             let action = pendingExport
             pendingExport = nil
@@ -149,7 +183,7 @@ struct ContentView: View {
         } message: { Text("「\(deletingItem?.name ?? "")」を削除します。この操作は取り消せません。") }
         .onAppear { model.restore() }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            keyboardVisible = isCompact
+            keyboardVisible = true
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
@@ -419,8 +453,9 @@ struct ContentView: View {
     private var partsPane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                pageHeading("MIXER", title: "音のバランスを、自在に。", description: "パートごとに音色と音量を調整できます。")
+                pageHeading("MIXER", title: "音のバランスを、自在に。", description: "指揮者の位置から、楽器の広がりと奥行きを。")
                 masterVolumeCard
+                stageCard
                 HStack {
                     Text("パート").font(.system(size: 15, weight: .semibold))
                     Spacer()
@@ -436,7 +471,7 @@ struct ContentView: View {
                     Text("楽譜を読み込むと、ここにパートが表示されます。")
                         .font(.system(size: 14)).foregroundStyle(StudioTheme.secondary)
                 }
-                Label("音量はすぐに反映。音色を変えると再生は停止します。", systemImage: "info.circle")
+                Label("配置は指を離すと反映。音色を変えると再生は停止します。", systemImage: "info.circle")
                     .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
                 DisclosureGroup("合唱・ドラムの音色について") {
                     Text("合唱は Choir Aahs 音色です。歌詞の発声には対応していません。ドラムは General MIDI の打楽器配置を使います。")
@@ -447,6 +482,78 @@ struct ContentView: View {
             .frame(maxWidth: 860)
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private var stageCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("楽器の配置").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Button("標準配置に戻す") { model.resetStagePositions() }
+                    .font(.system(size: 12)).accessibilityIdentifier("reset-stage")
+            }
+            Button {
+                model.prepareHeadphoneAudition()
+                showHeadphoneTuning = true
+            } label: {
+                Label("イヤホンの定位を調整 · " + model.headphoneSettings.profile.label, systemImage: "earbuds")
+                    .font(.system(size: 13, weight: .medium))
+            }.accessibilityIdentifier("headphone-tuning")
+                .sheet(isPresented: $showHeadphoneTuning) { HeadphoneTuningView(model: model) }
+            Text("米式配置 · 左右は指揮者から見た向きです")
+                .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+            GeometryReader { geometry in
+                ZStack {
+                    RoundedRectangle(cornerRadius: 18).fill(StudioTheme.background)
+                    VStack {
+                        Text("舞台奥").font(.system(size: 11))
+                        Spacer()
+                        HStack { Text("左"); Spacer(); Label("指揮者・聴く位置", systemImage: "person.fill"); Spacer(); Text("右") }
+                            .font(.system(size: 11))
+                    }.foregroundStyle(StudioTheme.secondary).padding(10)
+                    ForEach(stageMarkers(width: geometry.size.width)) { marker in
+                        Text(marker.numbers)
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white).padding(.horizontal, 8).frame(minWidth: 28, minHeight: 28)
+                            .background(StudioTheme.trackColors[marker.id % StudioTheme.trackColors.count], in: Capsule())
+                            .position(marker.point)
+                            .accessibilityLabel(marker.names + "の配置")
+                    }
+                }
+            }.frame(height: 210)
+            Text("近い位置の番号はまとめて表示します。各パートの「配置」で調整できます。ステレオのイヤホンで左右・奥行きを確認してください。")
+                .font(.system(size: 12)).foregroundStyle(StudioTheme.secondary)
+        }.studioCard()
+    }
+
+    private struct StageMarker: Identifiable {
+        let id: Int
+        var point: CGPoint
+        var numbers: String
+        var names: String
+        var count: Int
+    }
+
+    private func stageMarkers(width: CGFloat) -> [StageMarker] {
+        var markers: [StageMarker] = []
+        for (index, voice) in (model.tune?.voices ?? []).enumerated() {
+            let position = model.stagePosition(for: voice)
+            let point = CGPoint(x: 24 + (position.x + 1) / 2 * max(0, width - 48),
+                                y: 38 + (1 - position.depth) * 132)
+            if let nearby = markers.firstIndex(where: {
+                hypot($0.point.x - point.x, $0.point.y - point.y) < 34
+            }) {
+                let count = CGFloat(markers[nearby].count)
+                markers[nearby].point = CGPoint(x: (markers[nearby].point.x * count + point.x) / (count + 1),
+                                               y: (markers[nearby].point.y * count + point.y) / (count + 1))
+                markers[nearby].numbers += " · \(index + 1)"
+                markers[nearby].names += "、" + voice.name
+                markers[nearby].count += 1
+            } else {
+                markers.append(StageMarker(id: index, point: point, numbers: "\(index + 1)", names: voice.name, count: 1))
+            }
+        }
+        return markers
     }
 
     private var masterVolumeCard: some View {
@@ -472,6 +579,7 @@ struct ContentView: View {
         MixerPartRow(model: model, voice: voice, index: index,
                      instrumentID: model.assignments[voice.id] ?? "piano",
                      volume: model.partVolume(for: voice.id),
+                     position: model.stagePosition(for: voice),
                      muted: model.mutedVoices.contains(voice.id),
                      soloed: model.soloVoiceID == voice.id)
             .equatable()
@@ -480,53 +588,67 @@ struct ContentView: View {
     // MARK: Editor
 
     private var sourcePane: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    pageHeading("ABC EDITOR", title: "ひとつの記譜から、音楽へ。", description: "ABCテキストを編集して、楽譜に反映。")
-                    HStack(spacing: 8) {
-                        Label("ABC ソース", systemImage: "doc.plaintext").font(.system(size: 12, weight: .semibold))
-                        Spacer()
-                        Text("\(model.sourceLineCount) 行")
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
-                        Menu {
-                            Button { model.validateSource(); dismissKeyboard() } label: { Label("記譜を検証", systemImage: "checkmark.circle") }
-                            Button(role: .destructive) { showClearConfirm = true } label: { Label("入力内容をすべて削除", systemImage: "trash") }
-                                .disabled(!hasSource)
-                        } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
-                            .accessibilityLabel("エディタの操作")
-                    }
-                    .padding(.horizontal, 14).background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label("ABC ソース", systemImage: "doc.plaintext").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text("\(model.sourceLineCount) 行")
+                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(StudioTheme.secondary)
+                Button { editorPasteRequest += 1 } label: {
+                    Label("貼り付け", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(minHeight: 44)
+                }
+                .foregroundStyle(StudioTheme.accent)
+                .accessibilityIdentifier("editor-paste")
+                .accessibilityHint("クリップボードのテキストをカーソル位置に貼り付けます")
+                Menu {
+                    Button { model.validateSource(); dismissKeyboard() } label: { Label("記譜を検証", systemImage: "checkmark.circle") }
+                    Button { dismissKeyboard(); showEditorHelp = true } label: { Label("ABC記譜法のヒント", systemImage: "questionmark.circle") }
+                    Button(role: .destructive) { showClearConfirm = true } label: { Label("入力内容をすべて削除", systemImage: "trash") }
+                        .disabled(!hasSource)
+                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                    .accessibilityLabel("エディタの操作")
+            }
+            .padding(.horizontal, 14).background(StudioTheme.surface, in: RoundedRectangle(cornerRadius: 12))
 
-                    SourceEditor(text: Binding(get: { model.source }, set: { model.source = $0; model.scheduleValidation() }),
-                                 jumpToLine: $model.jumpToLine, isActive: tab == .editor)
-                        .frame(height: max(keyboardVisible ? 180 : 260, geo.size.height - 310))
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line))
-                    HStack(spacing: 12) {
+            SourceEditor(text: Binding(get: { model.source }, set: { model.source = $0; model.scheduleValidation() }),
+                         jumpToLine: $model.jumpToLine, isActive: tab == .editor,
+                         pasteRequest: editorPasteRequest,
+                         onPasteUnavailable: { model.toast("クリップボードにテキストがありません") })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(StudioTheme.line))
+            if !keyboardVisible {
+                HStack(spacing: 12) {
+                    if model.diagnostics.isEmpty {
                         Label("下書きは自動保存", systemImage: "checkmark.circle")
                             .font(.system(size: 11)).foregroundStyle(StudioTheme.secondary)
-                        Spacer(minLength: 0)
+                    } else {
                         Button {
                             dismissKeyboard()
-                            model.applySourceForDisplay { success in
-                                if success { tab = .score }
-                            }
-                        } label: { Label("楽譜に反映", systemImage: "arrow.right") }
-                            .buttonStyle(StudioActionStyle()).disabled(!hasSource || model.isOpening)
+                            showEditorDiagnostics = true
+                        } label: {
+                            Label("チェック \(model.diagnostics.count) 件", systemImage: "exclamationmark.circle")
+                                .font(.system(size: 12, weight: .semibold)).frame(minHeight: 44)
+                        }
+                        .foregroundStyle(StudioTheme.danger)
                     }
-                    if !model.diagnostics.isEmpty { diagnosticsPanel }
-                    DisclosureGroup("ABC記譜法のヒント") {
-                        Text("X: 曲番号　T: 曲名　M: 拍子\nL: 基本音長　K: 調　V: パート\n\n例：C D E F | G A B c |")
-                            .font(.system(size: 12, design: .monospaced))
-                            .lineSpacing(6).foregroundStyle(StudioTheme.secondary).padding(.top, 12)
-                    }.font(.system(size: 12)).padding(.vertical, 4)
+                    Spacer(minLength: 0)
+                    Button {
+                        dismissKeyboard()
+                        model.applySourceForDisplay { success in
+                            if success { tab = .score }
+                        }
+                    } label: { Label("楽譜に反映", systemImage: "arrow.right") }
+                        .buttonStyle(StudioActionStyle()).disabled(!hasSource || model.isOpening)
                 }
-                .padding(isCompact ? 22 : 28)
-                .frame(maxWidth: 960).frame(maxWidth: .infinity)
             }
-            .scrollDismissesKeyboard(.interactively)
         }
+        .padding(.horizontal, isCompact ? 12 : 20)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var diagnosticsPanel: some View {
@@ -541,7 +663,10 @@ struct ContentView: View {
                 }.font(.system(size: 12, weight: .semibold))
             }
             ForEach(Array(model.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
-                Button { model.jump(to: diagnostic) } label: {
+                Button {
+                    pendingEditorDiagnostic = diagnostic
+                    showEditorDiagnostics = false
+                } label: {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: diagnostic.severity == .error ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
                             .foregroundStyle(diagnostic.severity == .error ? StudioTheme.danger : Color.orange)
@@ -718,6 +843,7 @@ struct ContentView: View {
                     Toggle(isOn: $model.loopEnabled) { Label("ループ再生", systemImage: "repeat").font(.system(size: 15, weight: .medium)) }
                         .studioCard()
                     masterVolumeCard
+                    stageCard
                 }.padding(22)
             }
             .background(StudioTheme.background)
@@ -918,6 +1044,8 @@ private struct AboutView: View {
                             .font(.system(size: 11, design: .monospaced))
                             .textSelection(.enabled)
                     }
+                    Text("イヤホン用実測データ: CIPIC © 2001 The Regents of the University of California")
+                    DisclosureGroup("CIPIC の利用条件") { Text(licenseText("CIPIC-LICENSE")) }
                     Text("楽譜記号: Bravura © Steinberg Media Technologies GmbH(SIL Open Font License 1.1)")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -1064,13 +1192,14 @@ private struct MixerPartRow: View, Equatable {
     let index: Int
     let instrumentID: String
     let volume: Double
+    let position: StagePosition
     let muted: Bool
     let soloed: Bool
 
     static func == (a: Self, b: Self) -> Bool {
         a.model === b.model && a.voice.id == b.voice.id && a.voice.name == b.voice.name
             && a.index == b.index && a.instrumentID == b.instrumentID
-            && a.volume == b.volume && a.muted == b.muted && a.soloed == b.soloed
+            && a.volume == b.volume && a.position == b.position && a.muted == b.muted && a.soloed == b.soloed
     }
 
     var body: some View {
@@ -1118,7 +1247,44 @@ private struct MixerPartRow: View, Equatable {
                 InstrumentMenu(model: model, voiceID: voice.id, voiceName: voice.name,
                                selection: instrumentID).equatable()
             }
+            DisclosureGroup("配置 · 指揮者から見た位置") {
+                StagePositionControls(model: model, voiceID: voice.id, voiceName: voice.name,
+                                      position: position)
+                    .id(position)
+            }.font(.system(size: 12)).tint(color)
         }.studioCard()
+    }
+}
+
+/// Local drafts keep dragging smooth and commit one audio rebuild on release.
+private struct StagePositionControls: View {
+    let model: StudioModel
+    let voiceID: String
+    let voiceName: String
+    @State private var x: Double
+    @State private var depth: Double
+
+    init(model: StudioModel, voiceID: String, voiceName: String, position: StagePosition) {
+        self.model = model
+        self.voiceID = voiceID
+        self.voiceName = voiceName
+        _x = State(initialValue: position.x)
+        _depth = State(initialValue: position.depth)
+    }
+
+    private func commit() {
+        model.setStagePosition(voiceID, position: StagePosition(x: x, depth: depth))
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack { Text("左"); Spacer(); Text(abs(x) < 0.025 ? "中央" : "\(x < 0 ? "左" : "右") \(Int(abs(x) * 100))%"); Spacer(); Text("右") }
+            Slider(value: $x, in: -1...1, step: 0.05, onEditingChanged: { if !$0 { commit() } })
+                .accessibilityLabel(voiceName + "の左右位置").accessibilityIdentifier("stage-x-" + voiceID)
+            HStack { Text("手前"); Spacer(); Text("奥行き \(Int(depth * 100))%"); Spacer(); Text("奥") }
+            Slider(value: $depth, in: 0...1, step: 0.05, onEditingChanged: { if !$0 { commit() } })
+                .accessibilityLabel(voiceName + "の奥行き").accessibilityIdentifier("stage-depth-" + voiceID)
+        }.padding(.top, 12).foregroundStyle(StudioTheme.secondary)
     }
 }
 

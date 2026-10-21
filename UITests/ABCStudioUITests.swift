@@ -80,6 +80,58 @@ final class ABCStudioUITests: XCTestCase {
         app.toolbars.buttons["完了"].tap()
     }
 
+    func testHeadphoneAuditionAndSavedChoice() {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["楽器・音量"].tap()
+        let tuning = app.buttons["headphone-tuning"]
+        for _ in 0..<3 where !tuning.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        tuning.tap()
+        XCTAssertTrue(app.buttons["headphone-audition"].waitForExistence(timeout: 3))
+        app.buttons["headphone-profile"].tap()
+        app.buttons["候補 B"].tap()
+        app.buttons["headphone-audition"].tap()
+        let rate = app.buttons["headphone-rate"]
+        for _ in 0..<4 where !rate.isHittable { app.swipeUp() }
+        XCTAssertTrue(rate.exists)
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: rate)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed)
+        rate.tap()
+        saveScreenshot("headphone-tuning")
+        let apply = app.buttons["headphone-apply"]
+        for _ in 0..<6 where !apply.isHittable { app.swipeUp() }
+        apply.tap()
+        XCTAssertTrue(app.buttons["headphone-tuning"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["headphone-tuning"].label.contains("候補 B"))
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["楽器・音量"].waitForExistence(timeout: 5))
+        app.buttons["楽器・音量"].tap()
+        XCTAssertTrue(app.buttons["headphone-tuning"].label.contains("候補 B"))
+    }
+
+    func testStagePlacementControlsAndReset() {
+        let app = launch(abc: Self.ensemble)
+        app.buttons["楽器・音量"].tap()
+        XCTAssertTrue(app.buttons["reset-stage"].waitForExistence(timeout: 3))
+        saveScreenshot("orchestra-stage")
+        let disclosure = app.buttons["配置 · 指揮者から見た位置"].firstMatch
+        for _ in 0..<5 where !disclosure.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        disclosure.tap()
+        let horizontal = app.sliders["stage-x-melody"]
+        for _ in 0..<3 where !horizontal.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(horizontal.exists)
+        horizontal.adjust(toNormalizedSliderPosition: 0.9)
+        saveScreenshot("orchestra-placement-controls")
+        app.buttons["楽譜"].tap()
+        app.buttons["再生"].tap()
+        XCTAssertTrue(app.buttons["一時停止"].waitForExistence(timeout: 3))
+        app.buttons["一時停止"].tap()
+        app.buttons["楽器・音量"].tap()
+        let reset = app.buttons["reset-stage"]
+        for _ in 0..<6 where !reset.isHittable { app.scrollViews.firstMatch.swipeDown() }
+        reset.tap()
+    }
+
     func testPlaybackSurvivesTabSwitchesMixerScrollingAndSeeking() {
         let app = launch(abc: Self.ensemble + "\n[V:melody] " + String(repeating: "C D E F | ", count: 32))
         app.buttons["再生"].tap()
@@ -253,19 +305,35 @@ final class ABCStudioUITests: XCTestCase {
     func testEditorKeyboardAndApply() throws {
         let app = launch(abc: Self.ensemble)
         app.buttons["ABCを編集"].tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        XCTAssertGreaterThan(editor.frame.height, app.frame.height * 0.55,
+                             "エディタが画面の大半を使える")
+        XCTAssertTrue(app.buttons["editor-paste"].isHittable)
+        saveScreenshot("editor-expanded")
         app.buttons["エディタの操作"].tap()
         app.buttons["入力内容をすべて削除"].tap()
         app.alerts.buttons["すべて削除"].tap()
-        let editor = app.textViews.firstMatch
         editor.tap()
         editor.typeText("X:1\nT:New melody\nM:4/4\nL:1/4\nK:C\nC D E F | G A B c |")
         XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertGreaterThan(editor.frame.height, 200)
+        XCTAssertLessThanOrEqual(editor.frame.maxY, app.keyboards.firstMatch.frame.minY,
+                                 "キーボードで編集領域が隠れない")
         saveScreenshot("redesign-keyboard")
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let landscapeFits = NSPredicate { _, _ in
+            editor.frame.width > editor.frame.height && editor.frame.height > 80
+                && editor.frame.maxY <= app.keyboards.firstMatch.frame.minY
+        }
+        expectation(for: landscapeFits, evaluatedWith: nil)
+        waitForExpectations(timeout: 5)
+        saveScreenshot("editor-landscape-keyboard")
         app.toolbars.buttons["完了"].tap()
         XCTAssertTrue(app.buttons["楽譜に反映"].waitForExistence(timeout: 3))
         app.buttons["楽譜に反映"].tap()
-        XCTAssertTrue(app.staticTexts["SCORE"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["New melody"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["New melody"].firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["再生"].isHittable)
         saveScreenshot("redesign-applied")
     }

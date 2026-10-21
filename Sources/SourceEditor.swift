@@ -48,6 +48,8 @@ struct SourceEditor: UIViewRepresentable {
     @Binding var text: String
     @Binding var jumpToLine: Int?
     var isActive = true
+    var pasteRequest = 0
+    var onPasteUnavailable: () -> Void = {}
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -98,6 +100,21 @@ struct SourceEditor: UIViewRepresentable {
             view.selectedRange = NSRange(location: min(selection.location, (text as NSString).length), length: 0)
             context.coordinator.colorSyntax(view)
         }
+        if context.coordinator.lastPasteRequest != pasteRequest {
+            context.coordinator.lastPasteRequest = pasteRequest
+            // Paste outside the representable update so the delegate can update
+            // the source binding, validation and autosave normally.
+            DispatchQueue.main.async {
+                guard context.coordinator.parent.isActive else { return }
+                guard UIPasteboard.general.hasStrings else {
+                    context.coordinator.parent.onPasteUnavailable()
+                    return
+                }
+                view.becomeFirstResponder()
+                view.paste(nil)
+                view.scrollRangeToVisible(view.selectedRange)
+            }
+        }
         if let line = jumpToLine {
             // Avoid mutating a SwiftUI binding during a representable update.
             DispatchQueue.main.async {
@@ -129,13 +146,17 @@ struct SourceEditor: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: SourceEditor
         weak var textView: UITextView?
+        var lastPasteRequest: Int
         private var pendingEdit: NSRange?
         private var syntaxGeneration = 0
         private var syntaxWork: DispatchWorkItem?
         private var fullColorPending = false
         private static let syntaxQueue = DispatchQueue(label: "jp.porari.abcstudio.syntax", qos: .userInitiated)
 
-        init(_ parent: SourceEditor) { self.parent = parent }
+        init(_ parent: SourceEditor) {
+            self.parent = parent
+            lastPasteRequest = parent.pasteRequest
+        }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
                       replacementText text: String) -> Bool {

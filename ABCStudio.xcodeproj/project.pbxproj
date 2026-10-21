@@ -10,12 +10,16 @@
 		01654F036EB7F4E59DD719D7 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A39618F97CFC74D714F5475E /* LibraryStore.swift */; };
 		017386CC0AED12BC814B87CB /* Bravura.otf in Resources */ = {isa = PBXBuildFile; fileRef = 5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */; };
 		1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37637923AE91FC1C667E53C /* PlaybackEngine.swift */; };
+		1813C29DFA5CFB736A3C2856 /* HeadphoneTuningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEFF7F12818C420BBA49684C /* HeadphoneTuningView.swift */; };
 		1B9F3811223E89184D23537D /* ABCStudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99173102BBDAFB3215D8E386 /* ABCStudioUITests.swift */; };
+		1E6B57B99805050EB7235A12 /* HeadphoneRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370FECA28C62FF15BCC7C9A8 /* HeadphoneRendering.swift */; };
 		347E4CD320B30488D7009399 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F57AAD715D90CC75F90F7685 /* Assets.xcassets */; };
 		4886E77C36ADFA49C4DBA49A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 890519812F0AAC73F27C3DF2 /* PrivacyInfo.xcprivacy */; };
 		4BE4E1AD9E35A5E73EF3EC28 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB288F09B401AC08F8B888B5 /* ShareSheet.swift */; };
 		51962760B5E56D39AEA4D5A8 /* App-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 33395E6BD4429F8A37709CB6 /* App-LICENSE.txt */; };
+		5B979FF5A825F181A5334CCF /* SpatialAudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3457BD330023E15B74F82954 /* SpatialAudioTests.swift */; };
 		5BF44BBAB892067F6311F7C6 /* ABCParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C9B9B4B38999E35AB7482D /* ABCParser.swift */; };
+		629848815F575F90B6AF6527 /* CIPIC-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 180E03DF7AA26984FDB1256F /* CIPIC-LICENSE.txt */; };
 		749FA10A30447F72D20DE778 /* ABCStudioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C04AFE10B702242D65E57FCD /* ABCStudioApp.swift */; };
 		890689B210E175C17953CC3E /* Bravura-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */; };
 		8C631A1AF10E8120AD3BDC84 /* SoundFontPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */; };
@@ -30,7 +34,9 @@
 		C819F9939E857FAD4B919FB3 /* SourceEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCAF4D872EFAD86A8B52390C /* SourceEditor.swift */; };
 		C8CD735EAFBF877F3E3BA72D /* StudioModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA80B895588686D897CD6C03 /* StudioModel.swift */; };
 		CB822F0AD7281F721B4A03EF /* ABCStudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D471C5D312D9E403C2352DBB /* ABCStudioTests.swift */; };
+		D04E32AF46CCBCC6F6B01AF4 /* HeadphoneHRTF.json in Resources */ = {isa = PBXBuildFile; fileRef = CFBB679DB36403FE20A24449 /* HeadphoneHRTF.json */; };
 		D50F8EDF5A306C8676047AE2 /* Samples in Resources */ = {isa = PBXBuildFile; fileRef = 82863007FC78C0AF5E60CD4F /* Samples */; };
+		D6B3B0C49D76D049A882C1CB /* OrchestraSpatializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F3491104064B98B32C735AF /* OrchestraSpatializer.swift */; };
 		D9524F24E86D5E8C7A7878F1 /* AudioExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C448FE539297409667B3D5F1 /* AudioExporter.swift */; };
 		E1AFD99E3E7A9852D965E460 /* ABCSequencer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48530F415DAD56B00713974 /* ABCSequencer.swift */; };
 		E5E3E19355972FA9BD86039D /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E4407BE361A1C64DF8B504 /* ContentView.swift */; };
@@ -50,14 +56,18 @@
 /* Begin PBXFileReference section */
 		0465B01CCC938AAB90BEF40B /* ScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreView.swift; sourceTree = "<group>"; };
 		096526D529D1B1DA38555B2E /* ABCBeaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCBeaming.swift; sourceTree = "<group>"; };
+		180E03DF7AA26984FDB1256F /* CIPIC-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "CIPIC-LICENSE.txt"; sourceTree = "<group>"; };
 		1E13156B39ECD9861E1F93FD /* ABCDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCDiagnostics.swift; sourceTree = "<group>"; };
 		33395E6BD4429F8A37709CB6 /* App-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "App-LICENSE.txt"; sourceTree = "<group>"; };
+		3457BD330023E15B74F82954 /* SpatialAudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialAudioTests.swift; sourceTree = "<group>"; };
+		370FECA28C62FF15BCC7C9A8 /* HeadphoneRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadphoneRendering.swift; sourceTree = "<group>"; };
 		502BB13B0AE1B8EE0BBA7165 /* MIDIWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MIDIWriter.swift; sourceTree = "<group>"; };
 		546CC8E309E98E532D270FB6 /* ABCStudio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ABCStudio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		56CC4F0C8AC6B6C91E3F84A3 /* Bravura-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Bravura-OFL.txt"; sourceTree = "<group>"; };
 		5809CEC823FC7895ADE3035D /* ScoreExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreExporter.swift; sourceTree = "<group>"; };
 		5D6BF4B15A7F4D61B92111A5 /* Bravura.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = Bravura.otf; sourceTree = "<group>"; };
 		6936D1C777372E9AD5A5FB50 /* ABCStudioTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ABCStudioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6F3491104064B98B32C735AF /* OrchestraSpatializer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrchestraSpatializer.swift; sourceTree = "<group>"; };
 		73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Instruments.swift; sourceTree = "<group>"; };
 		76C9B9B4B38999E35AB7482D /* ABCParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCParser.swift; sourceTree = "<group>"; };
 		82863007FC78C0AF5E60CD4F /* Samples */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Samples; sourceTree = SOURCE_ROOT; };
@@ -74,12 +84,14 @@
 		C448FE539297409667B3D5F1 /* AudioExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioExporter.swift; sourceTree = "<group>"; };
 		CA80B895588686D897CD6C03 /* StudioModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioModel.swift; sourceTree = "<group>"; };
 		CBBC5CAAD0D02CD15B758F85 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CFBB679DB36403FE20A24449 /* HeadphoneHRTF.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = HeadphoneHRTF.json; sourceTree = "<group>"; };
 		D471C5D312D9E403C2352DBB /* ABCStudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABCStudioTests.swift; sourceTree = "<group>"; };
 		D5A44E9574F3B8D984C7B54F /* ScoreEngraver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreEngraver.swift; sourceTree = "<group>"; };
 		DE74E3D7C5E22795799A65F9 /* SoundFont */ = {isa = PBXFileReference; lastKnownFileType = folder; path = SoundFont; sourceTree = SOURCE_ROOT; };
 		F350AE718258BC7078C2163B /* ABCStudioUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ABCStudioUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F57AAD715D90CC75F90F7685 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FB288F09B401AC08F8B888B5 /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
+		FEFF7F12818C420BBA49684C /* HeadphoneTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeadphoneTuningView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -99,9 +111,12 @@
 			isa = PBXGroup;
 			children = (
 				A48530F415DAD56B00713974 /* ABCSequencer.swift */,
+				370FECA28C62FF15BCC7C9A8 /* HeadphoneRendering.swift */,
 				73E0ACD8CE09AC7BB4BBD34B /* Instruments.swift */,
+				6F3491104064B98B32C735AF /* OrchestraSpatializer.swift */,
 				A37637923AE91FC1C667E53C /* PlaybackEngine.swift */,
 				8C8908A14FD6F3E0F859EDD8 /* SoundFontPlayer.swift */,
+				6A2D8B68EB0EE3E08B730F06 /* HRTF */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -118,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				D471C5D312D9E403C2352DBB /* ABCStudioTests.swift */,
+				3457BD330023E15B74F82954 /* SpatialAudioTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -161,6 +177,15 @@
 			path = Score;
 			sourceTree = "<group>";
 		};
+		6A2D8B68EB0EE3E08B730F06 /* HRTF */ = {
+			isa = PBXGroup;
+			children = (
+				180E03DF7AA26984FDB1256F /* CIPIC-LICENSE.txt */,
+				CFBB679DB36403FE20A24449 /* HeadphoneHRTF.json */,
+			);
+			path = HRTF;
+			sourceTree = "<group>";
+		};
 		A1C29BD63EEACDBFE600796B /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -178,6 +203,7 @@
 				33395E6BD4429F8A37709CB6 /* App-LICENSE.txt */,
 				F57AAD715D90CC75F90F7685 /* Assets.xcassets */,
 				B4E4407BE361A1C64DF8B504 /* ContentView.swift */,
+				FEFF7F12818C420BBA49684C /* HeadphoneTuningView.swift */,
 				CBBC5CAAD0D02CD15B758F85 /* Info.plist */,
 				A39618F97CFC74D714F5475E /* LibraryStore.swift */,
 				890519812F0AAC73F27C3DF2 /* PrivacyInfo.xcprivacy */,
@@ -296,6 +322,8 @@
 				347E4CD320B30488D7009399 /* Assets.xcassets in Resources */,
 				890689B210E175C17953CC3E /* Bravura-OFL.txt in Resources */,
 				017386CC0AED12BC814B87CB /* Bravura.otf in Resources */,
+				629848815F575F90B6AF6527 /* CIPIC-LICENSE.txt in Resources */,
+				D04E32AF46CCBCC6F6B01AF4 /* HeadphoneHRTF.json in Resources */,
 				4886E77C36ADFA49C4DBA49A /* PrivacyInfo.xcprivacy in Resources */,
 				D50F8EDF5A306C8676047AE2 /* Samples in Resources */,
 				C0409DFC0AE51DB54ABD39B2 /* SoundFont in Resources */,
@@ -325,9 +353,12 @@
 				749FA10A30447F72D20DE778 /* ABCStudioApp.swift in Sources */,
 				D9524F24E86D5E8C7A7878F1 /* AudioExporter.swift in Sources */,
 				E5E3E19355972FA9BD86039D /* ContentView.swift in Sources */,
+				1E6B57B99805050EB7235A12 /* HeadphoneRendering.swift in Sources */,
+				1813C29DFA5CFB736A3C2856 /* HeadphoneTuningView.swift in Sources */,
 				BF204BBE984A81E3377115D5 /* Instruments.swift in Sources */,
 				01654F036EB7F4E59DD719D7 /* LibraryStore.swift in Sources */,
 				99BDAE7CCD7679A7A6D5D1F9 /* MIDIWriter.swift in Sources */,
+				D6B3B0C49D76D049A882C1CB /* OrchestraSpatializer.swift in Sources */,
 				1311BC42CA9A1A84A6C61495 /* PlaybackEngine.swift in Sources */,
 				BDB23E7121E6087638E6E328 /* ScoreEngraver.swift in Sources */,
 				AEF45DB848C80680A9949CCB /* ScoreExporter.swift in Sources */,
@@ -344,6 +375,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CB822F0AD7281F721B4A03EF /* ABCStudioTests.swift in Sources */,
+				5B979FF5A825F181A5334CCF /* SpatialAudioTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

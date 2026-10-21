@@ -307,6 +307,56 @@ final class ABCStudioTests: XCTestCase {
         XCTAssertEqual(node.starts.count, 1)
     }
 
+    func testLoadingDoesNotPrepareAudioBeforePlay() {
+        let node = RecordingPlayerNode()
+        let lock = NSLock()
+        var calls = 0
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 2)!
+        let engine = PlaybackEngine(makePlayerNode: { node }, makeBuffer: { _, _, _, _ in
+            lock.lock(); calls += 1; lock.unlock()
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4410)!
+            buffer.frameLength = 4410
+            for c in 0..<2 { buffer.floatChannelData![c].initialize(repeating: 0, count: 4410) }
+            return buffer
+        })
+        engine.load(seq("X:1\nL:1/4\nQ:1/4=120\nK:C\nC16 |"), instruments: [:])
+        defer { engine.stop() }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        lock.lock(); let beforePlay = calls; lock.unlock()
+        XCTAssertEqual(beforePlay, 0, "読み込みだけではデコード・音声生成をしない")
+        XCTAssertFalse(engine.isPlaying)
+        XCTAssertTrue(node.starts.isEmpty)
+        XCTAssertTrue(node.scheduledTimes.isEmpty)
+        engine.play()
+        waitUntil { !node.starts.isEmpty }
+        lock.lock(); let afterPlay = calls; lock.unlock()
+        XCTAssertEqual(afterPlay, 1)
+    }
+
+    func testPartialDecodingPreservesSamplePrefixAndLongerRequests() throws {
+        for dir in ["acoustic_grand_piano", "violin", "flute"] {
+            for midi in [24, 61, 100] {
+                let player = SoundFontPlayer()
+                player.sustainTail = 0
+                player.minimumDuration = 0
+                player.releaseFade = 0
+                // A short request followed by a longer one must never reuse a
+                // truncated prefix as if it were the complete source sample.
+                let short = try XCTUnwrap(player.makeBuffer(dir: dir, midi: midi,
+                                                           seconds: 0.15, velocity: 75))
+                let long = try XCTUnwrap(player.makeBuffer(dir: dir, midi: midi,
+                                                          seconds: 3, velocity: 75))
+                XCTAssertGreaterThan(long.frameLength, short.frameLength)
+                for c in 0..<2 {
+                    for i in 0..<Int(short.frameLength) {
+                        XCTAssertEqual(short.floatChannelData![c][i], long.floatChannelData![c][i],
+                                       accuracy: 0.00001)
+                    }
+                }
+            }
+        }
+    }
+
     func testTracksShareClockWhenLookaheadSchedulesLaterNotes() throws {
         var nodes: [RecordingPlayerNode] = []
         let engine = PlaybackEngine(makePlayerNode: {
