@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>サポート — ABC Studio</title>
   <meta name="description" content="ABC Studioの使い方、対応ファイル、よくある質問、トラブル時の確認方法をご案内します。お問い合わせは support@rarari.org へ。">
-  <meta name="theme-color" content="#1b706b">
+  <meta name="theme-color" content="#faf9f5">
   <meta property="og:title" content="サポート — ABC Studio">
   <meta property="og:description" content="ABC Studioの使い方、対応ファイル、よくある質問、トラブル時の確認方法をご案内します。">
   <meta property="og:type" content="website">
@@ -17,9 +17,13 @@
 </head>
 <body>
   <a class="skip" href="#main">本文へスキップ</a>
+
   <header class="site-header">
     <div class="container">
-      <a class="brand" href="index.html"><img src="icon.png" width="36" height="36" alt="">ABC Studio</a>
+      <a class="brand" href="index.html" aria-label="ABC Studio トップページ">
+        <img src="icon.png" width="36" height="36" alt="">
+        <span>ABC Studio</span>
+      </a>
       <nav aria-label="メインナビゲーション">
         <a href="index.html">紹介</a>
         <a href="support.html" aria-current="page">サポート</a>
@@ -29,99 +33,208 @@
   </header>
 
   <main id="main" tabindex="-1">
-    <section class="page-intro container" aria-labelledby="page-title">
-      <p class="eyebrow">HERE TO HELP.</p>
-      <h1 id="page-title">サポート</h1>
-      <p class="lead">ABC Studioの使い方と、困ったときの確認方法をご案内します。</p>
+    <section class="page-header" aria-labelledby="page-title">
+      <div class="container">
+        <div class="eyebrow">HERE TO HELP</div>
+        <h1 id="page-title">サポート・よくある質問</h1>
+        <p class="lead">ABC Studio の基本的な使い方から、困ったときの解決手順、お問い合わせ窓口までご案内します。</p>
+        
+        <div class="actions" style="margin-top: 24px; margin-bottom: 0;">
+          <a class="pill-badge" href="#start" style="text-decoration: none; padding: 6px 14px;">
+            <span>1. 使い方ガイド</span>
+          </a>
+          <a class="pill-badge" href="#faq" style="text-decoration: none; padding: 6px 14px;">
+            <span>2. よくある質問 (FAQ)</span>
+          </a>
+          <a class="pill-badge" href="#contact" style="text-decoration: none; padding: 6px 14px;">
+            <span>3. お問い合わせ</span>
+          </a>
+        </div>
+      </div>
     </section>
 
-    <div class="container prose">
+    <div class="container prose-container prose">
+      <!-- Getting Started Section -->
       <section id="start" aria-labelledby="start-title">
         <h2 id="start-title">まずは、曲を再生してみましょう</h2>
-        <ol class="steps">
-          <li><strong>楽譜を開く。</strong>起動時に表示されるサンプルを使うか、画面右上のメニューから「ABCを読み込む」を選びます。Filesやメールなどにあるファイルを共有メニューからABC Studioで開くこともできます。</li>
-          <li><strong>演奏を聴く。</strong>画面下部の再生ボタンで演奏します。再生速度は50〜200%で調整でき、譜面の音符をタップするとその位置から再生できます。</li>
-          <li><strong>パートを調整する。</strong>「楽器・音量」タブでパートごとの楽器と音量を設定します。ミュートやソロを使うと、聴きたいパートだけを確認できます。</li>
-          <li><strong>ABCを編集する。</strong>「ABCを編集」タブでテキストを変更し、「楽譜に反映」を押します。編集中の下書きは自動保存されるので、反映前にアプリを閉じても編集内容を保てます。</li>
-          <li><strong>ファイルに書き出す。</strong>右上のメニューからABCテキスト、楽譜のPDFまたはPNG、演奏データのMIDI、音声のWAVを作成して共有できます。</li>
+        <p>アプリを起動したら、5つのステップですぐに楽譜の表示・演奏・編集を体験できます。</p>
+
+        <ol class="steps-list">
+          <li class="step-card">
+            <div class="step-number">1</div>
+            <div class="step-body">
+              <strong>楽譜を開く</strong>
+              <p>アプリ起動時に表示されるサンプル楽譜をそのまま試すか、画面右上のメニューから「ABCを読み込む」を選びます。iOSの「ファイル」アプリやメールなどに届いた <code>.abc</code> / <code>.txt</code> ファイルを共有メニューから直接ABC Studioで開くことも可能です。</p>
+            </div>
+          </li>
+          <li class="step-card">
+            <div class="step-number">2</div>
+            <div class="step-body">
+              <strong>演奏を聴く・操作する</strong>
+              <p>画面下部の再生バーにある再生ボタンをタップすると演奏が始まります。速度ボタンから再生速度を50〜200%に調整可能。楽譜上の音符をタップすれば、任意の場所へ瞬時にシークできます。</p>
+            </div>
+          </li>
+          <li class="step-card">
+            <div class="step-number">3</div>
+            <div class="step-body">
+              <strong>パート音量・楽器を調整する</strong>
+              <p>「ミキサー」タブでパートごとの音量スライダーや楽器（78種類）を設定します。特定のパートだけを集中して聴きたいときは「ソロ」ボタン、不要なパートは「ミュート」ボタンで切り替えられます。</p>
+            </div>
+          </li>
+          <li class="step-card">
+            <div class="step-number">4</div>
+            <div class="step-body">
+              <strong>ABCエディタで編集する</strong>
+              <p>「エディタ」タブでABCテキストを自由に編集し、「楽譜に反映」を押すとスコアへ反映されます。入力中の下書きは自動保存されるため、作業途中でアプリを閉じても安心です。</p>
+            </div>
+          </li>
+          <li class="step-card">
+            <div class="step-number">5</div>
+            <div class="step-body">
+              <strong>ファイルに書き出す・共有する</strong>
+              <p>右上のメニューから、ABCテキスト、楽譜のPDFまたはPNG、演奏データのMIDI（SMF）、オフラインレンダリングされた高音質WAV音声をいつでも書き出して共有できます。</p>
+            </div>
+          </li>
         </ol>
-        <p>読み込めるのはUTF-8またはUTF-16の <code>.abc</code> / <code>.txt</code> ファイル（最大8 MiB）です。複数の曲を含むABCファイルも開けます。</p>
+
+        <div class="info-box">
+          <p><strong>対応フォーマット：</strong>UTF-8 または UTF-16 でエンコードされた <code>.abc</code> / <code>.txt</code> ファイル（最大 8 MiB）。複数の曲（<code>X:</code>）を含むABCファイルも自動認識して曲選択画面から選べます。</p>
+        </div>
       </section>
 
-      <section id="faq" aria-labelledby="faq-title">
+      <!-- FAQ Section -->
+      <section id="faq" aria-labelledby="faq-title" style="margin-top: 56px;">
         <h2 id="faq-title">よくある質問</h2>
 
-        <details>
-          <summary>どのデバイスで使えますか？</summary>
-          <p>iOS 17以降またはiPadOS 17以降を搭載したiPhone・iPadで使えます。楽譜の表示、編集、再生、保存、書き出しはオフラインで利用できます。</p>
-        </details>
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary class="faq-question">どのデバイス・OSバージョンで使えますか？</summary>
+            <div class="faq-answer">
+              <p>iOS 17 以降、または iPadOS 17 以降を搭載した iPhone および iPad で動作します。</p>
+              <p>楽譜の表示、編集、演奏、保存、各種書き出し機能はすべて端末内のネイティブエンジンで処理されるため、通信環境のない完全オフラインでもすべての機能をご利用いただけます。</p>
+            </div>
+          </details>
 
-        <details>
-          <summary>読み込めるファイルとABC記法を教えてください。</summary>
-          <p>拡張子が <code>.abc</code> または <code>.txt</code> のテキストファイルに対応しています。文字コードはUTF-8またはUTF-16、ファイルサイズは8 MiBまでです。複数声部（<code>V:</code>）、タイ、装飾音、連符、反復記号などを扱えます。</p>
-          <p>ABC記法のすべての拡張に対応しているわけではありません。<code>P:</code> による演奏順の指定と、<code>&amp;</code> による声部分割には未対応です。</p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">読み込めるファイル形式とABC記法の制限は？</summary>
+            <div class="faq-answer">
+              <p>拡張子が <code>.abc</code> または <code>.txt</code> のテキストファイルに対応しています。文字コードは UTF-8 および UTF-16、ファイルサイズは最大 8 MiB までサポートします。</p>
+              <p>複数声部（<code>V:</code>）、タイ、連符、装飾音（トリル・モルデント等）、フェルマータ、反復記号と番号付き括弧（<code>|1 |2</code>）などを扱えます。なお、<code>P:</code> による演奏順序の指示および <code>&amp;</code> による声部分割には現在対応していません。</p>
+            </div>
+          </details>
 
-        <details>
-          <summary>選べる楽器は何種類ですか？合唱で歌詞を歌えますか？</summary>
-          <p>78種類の楽器割り当てから選べます。近い種類の楽器ではGeneral MIDI（GM）の音色を共有する場合があります。合唱は「Choir Aahs」の音色で再生し、歌詞を歌う音声合成には対応していません。</p>
-          <p><a href="https://github.com/porarrirr/abc-studio/blob/main/docs/instruments.md">楽器と音色の一覧を見る →</a></p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">選べる楽器は何種類ですか？ 合唱は歌詞を歌えますか？</summary>
+            <div class="faq-answer">
+              <p>ピアノ、オルガン、バイオリンやチェロなどの弦楽器、フルートやトランペットなどの管楽器、ギター、ドラムキットなど 78 種類の楽器割り当てから選択できます。一部の楽器は General MIDI（GM）仕様に基づき同一音色を共有します。</p>
+              <p>合唱は「Choir Aahs」音色での楽器演奏となり、歌詞を音声合成で歌い上げる機能はありません。</p>
+              <p style="margin-top: 8px;"><a href="https://github.com/porarrirr/abc-studio/blob/main/docs/instruments.md" target="_blank" rel="noopener">楽器と音色の一覧を見る →</a></p>
+            </div>
+          </details>
 
-        <details>
-          <summary>音が出ないときはどうすればよいですか？</summary>
-          <p>デバイスのメディア音量と、Bluetoothイヤホンなどの音声出力先を確認してください。アプリのマスター音量とパート音量が下がっていないか、パートがミュートされていないかも確認します。別のパートだけ鳴る場合は、ソロ設定を解除してください。電話やSiriによる割り込みの後は、もう一度再生してください。</p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">音が出ないときはどうすればよいですか？</summary>
+            <div class="faq-answer">
+              <p>まずは本体側面の消音スイッチ（マナーモード）の設定、端末のメディア音量、Bluetooth イヤホン等の出力先をご確認ください。</p>
+              <p>アプリ内の再生バー右側の設定で「マスター音量」が下がっていないか、また「ミキサー」タブで各パートがミュートされていたり、他のパートがソロ設定になっていないかをお確かめください。電話や Siri による割り込み後は、もう一度再生ボタンを押すことで再開されます。</p>
+            </div>
+          </details>
 
-        <details>
-          <summary>譜面が正しく表示されないときは？</summary>
-          <p>「ABCを編集」タブで診断を確認し、曲番号や曲名、拍子、音符などの記述を見直してください。エラーや警告に行番号が表示されたら、その行の内容を確認します。お問い合わせの際は、問題を再現できる最小限のABCテキストを添えてください。</p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">譜面が正しく表示されない・エラーが出るときは？</summary>
+            <div class="faq-answer">
+              <p>「エディタ」タブで構文診断メッセージをご確認ください。ヘッダー（曲番号 <code>X:</code>、曲名 <code>T:</code>、拍子 <code>M:</code>、基準音長 <code>L:</code>、調性 <code>K:</code>）や音符の記述に誤りがある場合、問題のある行番号と内容が表示されます。</p>
+              <p>不具合としてお問い合わせいただく際は、問題を再現できる最小限の ABC テキストを添えていただけると調査がスムーズです。</p>
+            </div>
+          </details>
 
-        <details>
-          <summary>保存した曲の名前を変えたり、削除したりできますか？</summary>
-          <p>「ライブラリ」で曲を長押しすると、名前の変更または削除を選べます。削除前には確認が表示されます。</p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">保存した曲の名前変更や削除はできますか？</summary>
+            <div class="faq-answer">
+              <p>「ライブラリ」タブで対象の曲を長押しするか、各行の「…」メニューから名前の変更および削除を行えます。削除前には確認のアラートが表示されます。</p>
+            </div>
+          </details>
 
-        <details>
-          <summary>編集中の下書きを消すには？</summary>
-          <p>「ABCを編集」タブの削除ボタンから、確認のうえ入力中のABCテキストを消去できます。下書きも空になり、次回起動時に戻りません。すでに「楽譜に反映」した譜面は、この操作では変わりません。</p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">譜面の自動追従（オートスクロール）を一時停止できますか？</summary>
+            <div class="faq-answer">
+              <p>楽譜画面の上部にある「追従」アイコンで自動スクロールの ON / OFF を切り替えられます。</p>
+              <p>iOS 18 以降では、演奏中に手動で楽譜をスクロールすると自動追従が一時停止し、「再生位置へ戻る」ボタンを押すことでスムーズに追従が再開されます（iOS 17 では手動スクロールによる一時停止はサポートされず、アイコンによる切替となります）。</p>
+            </div>
+          </details>
 
-        <details>
-          <summary>譜面の自動追従を一時停止できますか？</summary>
-          <p>譜面上部の「追従」で自動追従を切り替えられます。iOS 18以降では、演奏中に手でスクロールすると追従が一時停止し、「再生位置へ戻る」を押すと再開します。iOS 17では手動スクロールによる一時停止はできません。</p>
-        </details>
-
-        <details>
-          <summary>インターネット接続やアカウント登録は必要ですか？</summary>
-          <p>アプリの基本機能にインターネット接続やアカウント登録は必要ありません。共有先のアプリ、クラウド上のファイル、メール、外部Webページを使う場合は、それぞれのサービスが通信することがあります。</p>
-        </details>
+          <details class="faq-item">
+            <summary class="faq-question">アカウント登録やインターネット接続は必要ですか？</summary>
+            <div class="faq-answer">
+              <p>いいえ、一切不要です。ABC Studio は完全ローカルで動作する設計となっており、アカウント作成、ログイン、クラウド認証などを求められることはありません。</p>
+              <p>なお、書き出したファイルをメールやクラウドストレージへ送信する場合や、Webサイト・問い合わせメールを開く場合は各外部サービスの通信が発生します。</p>
+            </div>
+          </details>
+        </div>
       </section>
 
-      <section class="contact" id="contact" aria-labelledby="contact-title">
-        <p class="eyebrow">LET’S SORT IT OUT.</p>
-        <h2 id="contact-title">お問い合わせ</h2>
-        <p>アプリの使い方や不具合は、サポート窓口へご連絡ください。</p>
-        <p><a class="mail" href="mailto:support@rarari.org?subject=ABC%20Studio%20Support">support@rarari.org</a></p>
-        <p>共通窓口：<a href="mailto:musicabc@rarari.org">musicabc@rarari.org</a></p>
-        <p>確認をスムーズに進めるため、アプリのバージョン、デバイス名、iOS / iPadOSのバージョン、問題が起きるまでの手順をお知らせください。楽譜を添える場合は、共有してよい最小限の例をご用意ください。パスワードなどの機密情報は送らないでください。</p>
-        <p>プライバシーに関するお問い合わせ：<a href="mailto:privacy@rarari.org">privacy@rarari.org</a></p>
-        <p class="note">公開して差し支えない不具合は、<a href="https://github.com/porarrirr/abc-studio/issues">GitHub Issues</a>でも受け付けています。</p>
+      <!-- Contact Section -->
+      <section class="contact-section" id="contact" aria-labelledby="contact-title">
+        <div class="eyebrow">LET’S SORT IT OUT</div>
+        <h2 id="contact-title">お問い合わせ窓口</h2>
+        <p>アプリの操作方法についてのご質問や、不具合・改善のご要望は以下の窓口へお気軽にご連絡ください。</p>
+
+        <div class="contact-grid">
+          <div class="contact-card">
+            <span class="badge">サポート窓口</span>
+            <a class="mail-link" href="mailto:support@rarari.org?subject=ABC%20Studio%20Support">support@rarari.org</a>
+            <p>アプリの使い方、トラブル、表示の不具合などに関するお問い合わせ</p>
+          </div>
+
+          <div class="contact-card">
+            <span class="badge">共通窓口</span>
+            <a class="mail-link" href="mailto:musicabc@rarari.org">musicabc@rarari.org</a>
+            <p>一般的なご質問、取材、その他のお問い合わせ</p>
+          </div>
+
+          <div class="contact-card">
+            <span class="badge">プライバシー窓口</span>
+            <a class="mail-link" href="mailto:privacy@rarari.org?subject=ABC%20Studio%20Privacy">privacy@rarari.org</a>
+            <p>情報の取り扱い、ポリシーに関するお問い合わせ</p>
+          </div>
+        </div>
+
+        <div class="info-box" style="margin-top: 16px;">
+          <p><strong>スムーズな調査のためのお願い：</strong><br>
+          不具合のお問い合わせの際は、可能であれば以下の情報をお知らせください。</p>
+          <ul style="margin: 8px 0 0; padding-left: 20px;">
+            <li>ご利用のデバイス機種名（例: iPhone 16 Pro, iPad Air 第5世代）</li>
+            <li>OSのバージョン（例: iOS 18.1）</li>
+            <li>問題の発生手順と、再現可能な最小限のABCテキスト（パスワード等の個人情報は含めないでください）</li>
+          </ul>
+        </div>
+
+        <p style="margin-top: 20px; font-size: 13px; color: var(--ink-tertiary);">
+          ※ 公開リポジトリでの不具合報告や機能提案は <a href="https://github.com/porarrirr/abc-studio/issues" target="_blank" rel="noopener">GitHub Issues</a> でも受け付けております。
+        </p>
       </section>
     </div>
   </main>
 
   <footer>
     <div class="container">
-      <a class="brand" href="index.html">ABC Studio</a>
-      <nav aria-label="フッターナビゲーション">
-        <a href="support.html">サポート</a>
-        <a href="privacy.html">プライバシーポリシー</a>
-        <a href="https://github.com/porarrirr/abc-studio">GitHub / MIT License</a>
-        <a href="mailto:musicabc@rarari.org">musicabc@rarari.org</a>
-      </nav>
-      <p>© 2026 porari · iPhone / iPad のための ABC 楽譜アプリ</p>
+      <div class="footer-top">
+        <a class="brand" href="index.html">
+          <img src="icon.png" width="30" height="30" alt="">
+          <span>ABC Studio</span>
+        </a>
+        <nav aria-label="フッターナビゲーション">
+          <a href="index.html">紹介</a>
+          <a href="support.html" aria-current="page">サポート</a>
+          <a href="privacy.html">プライバシーポリシー</a>
+          <a href="https://github.com/porarrirr/abc-studio">GitHub</a>
+          <a href="mailto:musicabc@rarari.org">お問い合わせ</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 porari · iPhone / iPad のための ABC 楽譜アプリ</p>
+        <p>オープンソース (MIT License)</p>
+      </div>
     </div>
   </footer>
 </body>

@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ABC Studio — ABC譜を、読む。聴く。自分で整える。</title>
   <meta name="description" content="ABC記譜法の楽譜を表示・再生・編集できるiPhone / iPadアプリ。78種類の楽器割り当て、パート別の音量調整、ライブラリ、5形式の書き出しに対応。">
-  <meta name="theme-color" content="#f6f5ed">
+  <meta name="theme-color" content="#faf9f5">
   <meta property="og:title" content="ABC Studio — ABC譜を、読む。聴く。自分で整える。">
-  <meta property="og:description" content="ABC記譜法の楽譜を表示・再生・編集できるiPhone / iPadアプリ。オフラインで使え、PDF・PNG・MIDI・WAVにも書き出せます。">
+  <meta property="og:description" content="ABC記譜法の楽譜を表示・再生・編集できるiPhone / iPadアプリ。完全オフラインで動作し、PDF・PNG・MIDI・WAVにも書き出せます。">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://porarrirr.github.io/abc-studio/">
   <meta property="og:image" content="https://porarrirr.github.io/abc-studio/icon.png">
@@ -17,10 +17,11 @@
 </head>
 <body>
   <a class="skip" href="#main">本文へスキップ</a>
+  
   <header class="site-header">
     <div class="container">
-      <a class="brand" href="index.html" aria-label="ABC Studio — 紹介ページ">
-        <img src="icon.png" width="36" height="36" alt="">
+      <a class="brand" href="index.html" aria-label="ABC Studio トップページ">
+        <img src="icon.png" width="36" height="36" alt="ABC Studio アイコン">
         <span>ABC Studio</span>
       </a>
       <nav aria-label="メインナビゲーション">
@@ -34,97 +35,210 @@
   <main id="main">
     <section class="hero container" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="eyebrow">A SCORE YOU CAN HEAR</p>
-        <h1 id="hero-title">ABC譜を、読む。<br><em>聴く。自分で整える。</em></h1>
-        <p class="lead">文字で書かれた音楽を、見やすい楽譜と演奏に。<br>フレーズを確かめるときも、パートを聴き分けたいときも。<br>ABC Studio は iPhone と iPad のための楽譜プレイヤーです。</p>
-        <div class="actions">
-          <a class="button" href="support.html#start">使い方を見る <span aria-hidden="true">↗</span></a>
-          <a class="text-link" href="https://github.com/porarrirr/abc-studio">GitHub で見る <span aria-hidden="true">→</span></a>
+        <div class="eyebrow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+          A SCORE YOU CAN HEAR
         </div>
-        <p class="app-status"><span class="status-dot" aria-hidden="true"></span>App Store 公開準備中</p>
-        <p class="note">iOS / iPadOS 17 以降 · オフラインで利用できます</p>
+        <h1 id="hero-title">ABC譜を、読む。<br><em>聴く。自分で整える。</em></h1>
+        <p class="lead">文字で書かれた音楽を、美しい五線譜とリアルな演奏に。<br>フレーズを確かめるときも、パートを聴き分けたいときも。<br>ABC Studio は iPhone と iPad のための直感的な楽譜プレイヤー＆エディタです。</p>
+        
+        <div class="badge-row">
+          <span class="pill-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h10M7 12h10M7 17h10"/></svg>
+            iOS / iPadOS 17 以降
+          </span>
+          <span class="pill-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            完全オフライン動作
+          </span>
+          <span class="pill-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 14.14 14.14"/></svg>
+            広告・追跡ゼロ
+          </span>
+        </div>
+
+        <div class="actions">
+          <a class="button-primary" href="support.html#start">
+            使い方を見る
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+          <a class="button-secondary" href="https://github.com/porarrirr/abc-studio">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            GitHub (MIT)
+          </a>
+        </div>
+
+        <div class="app-status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>App Store 公開準備中（近日リリース）</span>
+        </div>
       </div>
+
       <figure class="hero-visual">
-        <img src="screenshots/iphone-score.png" width="1206" height="2622" alt="ABC Studioで複数パートの楽譜を表示し、再生位置を確認しているiPhone画面" fetchpriority="high">
-        <figcaption>ABC Studio の実際の画面</figcaption>
+        <div class="device-showcase">
+          <div class="device-frame-ipad" aria-hidden="true">
+            <img src="screenshots/ipad-score.png" width="2064" height="2752" alt="iPadでのABC Studio画面">
+          </div>
+          <div class="device-frame-iphone">
+            <img src="screenshots/iphone-score.png" width="1206" height="2622" alt="ABC Studioで複数パートの楽譜を表示し再生位置を確認しているiPhone画面" fetchpriority="high">
+          </div>
+        </div>
+        <figcaption>ABC Studio の実際の動作画面（iPhone &amp; iPad）</figcaption>
       </figure>
     </section>
 
-    <section class="facts container" aria-label="主な仕様">
-      <p><strong>78</strong><span>種類の楽器割り当て</span></p>
-      <p><strong>50–200%</strong><span>練習に合わせた再生速度</span></p>
-      <p><strong>5形式</strong><span>ABC · PDF · PNG · MIDI · WAV</span></p>
-    </section>
+    <!-- Facts Strip -->
+    <div class="facts-wrapper">
+      <div class="container">
+        <section class="facts" aria-label="主な仕様">
+          <div class="fact-item">
+            <div class="fact-number">78</div>
+            <div class="fact-label">種類の多彩な楽器割り当て</div>
+          </div>
+          <div class="fact-item">
+            <div class="fact-number">50 – 200%</div>
+            <div class="fact-label">練習に合わせた柔軟な再生速度</div>
+          </div>
+          <div class="fact-item">
+            <div class="fact-number">5 形式</div>
+            <div class="fact-label">ABC · PDF · PNG · MIDI · WAV</div>
+          </div>
+        </section>
+      </div>
+    </div>
 
+    <!-- Features Grid -->
     <section class="container section" id="features" aria-labelledby="features-title">
-      <p class="eyebrow">MADE FOR YOUR MUSIC</p>
-      <h2 id="features-title">楽譜を開いたら、すぐに試せる。</h2>
-      <div class="features">
-        <article>
-          <span class="number">01 / SCORE</span>
+      <div class="section-header">
+        <div class="eyebrow">MADE FOR YOUR MUSIC</div>
+        <h2 id="features-title">楽譜を開いたら、すぐに試せる。</h2>
+        <p>スコアの直感的な確認から、パートごとの反復練習、そして外部アプリへの共有まで。音楽づくりをスマートにする機能を凝縮しました。</p>
+      </div>
+
+      <div class="features-grid">
+        <article class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          </div>
+          <div class="feature-tag">01 / SCORE</div>
           <h3>譜面を見ながら聴く。</h3>
-          <p>ABCテキストから楽譜を表示。ピンチで拡大し、音符をタップしてその位置から再生できます。演奏中は音符の色と自動追従で、いま鳴っている場所を確かめられます。</p>
+          <p>ABCテキストからSMuFL準拠の美しい五線譜を瞬時に描画。ピンチで滑らかに拡大し、気になる音符をタップするだけでその位置から即座に再生。演奏中は音符の色付けと自動スクロールで追従します。</p>
         </article>
-        <article>
-          <span class="number">02 / PARTS</span>
+
+        <article class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="21" y2="21"/><line x1="4" x2="20" y1="3" y2="3"/><line x1="12" x2="20" y1="12" y2="12"/><line x1="4" x2="8" y1="12" y2="12"/><line x1="14" x2="14" y1="9" y2="15"/><line x1="8" x2="8" y1="18" y2="24"/><line x1="16" x2="16" y1="0" y2="6"/></svg>
+          </div>
+          <div class="feature-tag">02 / PARTS</div>
           <h3>パートごとの音を確かめる。</h3>
-          <p>ピアノ、弦、管、ギター、打楽器など78種類の楽器を割り当て。各パートの音量を変えたり、ミュートやソロにしたりして、聴きたい声部に集中できます。一部の楽器は同じGM音色を共有します。</p>
+          <p>ピアノ、弦楽器、管楽器、ギター、打楽器など78種類の楽器音色に対応。パートごとの個別音量、ミュート、ソロ再生を活用することで、合奏曲の中で自分の担当パートを明瞭に把握できます。</p>
         </article>
-        <article>
-          <span class="number">03 / PRACTICE</span>
+
+        <article class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div class="feature-tag">03 / PRACTICE</div>
           <h3>無理のない速さで、何度でも。</h3>
-          <p>再生速度は50〜200%で調整。シークや曲全体のループに対応し、バックグラウンド再生とロック画面からの操作も使えます。</p>
+          <p>再生速度は音程を保ったまま50%〜200%まで自在にコントロール。シークや曲全体のループ再生に対応し、バックグラウンド再生やロック画面・コントロールセンターからのリモート操作も万全です。</p>
         </article>
-        <article>
-          <span class="number">04 / LIBRARY</span>
+
+        <article class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 5-3-3H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path d="M8 18h1"/><path d="M18.4 9.6a2 2 0 1 1 3 3L17 17l-4 1 1-4Z"/></svg>
+          </div>
+          <div class="feature-tag">04 / LIBRARY</div>
           <h3>編集して、手元に残す。</h3>
-          <p>.abc / .txt ファイルやクリップボードから読み込み、内蔵エディタで編集。下書きは自動保存され、曲はライブラリで整理できます。いつでも開き直して続きを試せます。</p>
+          <p><code>.abc</code> / <code>.txt</code> ファイルやクリップボードから簡単にインポート。入力ミスを通知する構文診断と下書きの自動保存を備えた内蔵エディタで修正し、ライブラリで安全に整理・管理できます。</p>
         </article>
       </div>
     </section>
 
-    <section class="export-band" aria-labelledby="export-title">
-      <div class="container export-content">
-        <div>
-          <p class="eyebrow">KEEP CREATING</p>
+    <!-- Export Band -->
+    <section class="export-section" aria-labelledby="export-title">
+      <div class="container export-container">
+        <div class="export-content">
+          <div class="eyebrow">KEEP CREATING</div>
           <h2 id="export-title">できた譜面を、<br>次の場所へ。</h2>
-          <p>楽譜を共有したり、別のツールで続きを作ったり。書き出したファイルは、お好みのアプリへ渡せます。</p>
+          <p>練習用にとどまらず、印刷・共有・他ツールとの連携もシームレス。譜面のPDF出力からDAW連携用のMIDI・高品質WAVレンダリングまで、5つの形式で手軽に共有できます。</p>
         </div>
-        <ul class="formats" aria-label="書き出し形式">
-          <li><strong>ABC</strong><span>記譜テキスト</span></li>
-          <li><strong>PDF / PNG</strong><span>楽譜</span></li>
-          <li><strong>MIDI</strong><span>演奏データ</span></li>
-          <li><strong>WAV</strong><span>オーディオ</span></li>
-        </ul>
+
+        <div class="format-cards" aria-label="対応している書き出し形式">
+          <div class="format-card">
+            <div class="format-badge">ABC</div>
+            <div class="format-info">
+              <strong>ABC テキスト</strong>
+              <span>共有やバックアップに最適な記譜ソース</span>
+            </div>
+          </div>
+          <div class="format-card">
+            <div class="format-badge">PDF</div>
+            <div class="format-info">
+              <strong>PDF / PNG 楽譜</strong>
+              <span>ベクター品質の印刷用・画像用楽譜</span>
+            </div>
+          </div>
+          <div class="format-card">
+            <div class="format-badge">MID</div>
+            <div class="format-info">
+              <strong>MIDI (SMF)</strong>
+              <span>DAWや音楽制作ソフトへ持ち込める演奏データ</span>
+            </div>
+          </div>
+          <div class="format-card">
+            <div class="format-badge">WAV</div>
+            <div class="format-info">
+              <strong>WAV オーディオ</strong>
+              <span>内蔵音源による高音質オフラインレンダリング</span>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="container section split" aria-labelledby="offline-title">
-      <div>
-        <p class="eyebrow">OFFLINE BY DESIGN</p>
-        <h2 id="offline-title">楽譜は、あなたの手元に。</h2>
-        <p>アカウント登録は不要。楽譜の読み込み・表示・編集・再生・保存はデバイス内で行います。アプリに広告、解析SDK、トラッキング機能はありません。</p>
-        <a class="text-link" href="privacy.html">情報の取り扱いについて <span aria-hidden="true">→</span></a>
+    <!-- Offline & Privacy Split -->
+    <section class="container section split-section" aria-labelledby="offline-title">
+      <div class="split-copy">
+        <div class="eyebrow">OFFLINE BY DESIGN</div>
+        <h2 id="offline-title">あなたの音楽は、<br>あなたの手元だけに。</h2>
+        <p>アカウント登録やログインは一切不要。楽譜の読み込み、表示、編集、演奏の合成、保存まですべてデバイス内（ローカル）で処理します。<br>アプリには広告、アクセス解析SDK、トラッキング機能は一切含まれていません。</p>
+        <div class="actions">
+          <a class="button-secondary" href="privacy.html">
+            プライバシーポリシーを見る
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+        </div>
       </div>
-      <aside class="callout" aria-labelledby="abc-note-title">
-        <h3 id="abc-note-title">ABC記法の対応範囲</h3>
-        <p>複数声部、タイ、連符、装飾音、反復記号と番号付き括弧などに対応しています。P: による演奏順の指定と、&amp; による声部分割には未対応です。</p>
-        <p>合唱は楽器音色で再生します。歌詞を歌う機能はありません。</p>
-        <a href="support.html">対応範囲とよくある質問 <span aria-hidden="true">→</span></a>
+
+      <aside class="info-box" aria-labelledby="abc-note-title">
+        <h3 id="abc-note-title">ABC記法の対応範囲について</h3>
+        <p>複数声部（<code>V:</code>）、タイ、連符、装飾音、フェルマータ、反復記号と番号付き括弧（<code>|1 |2</code>）などの標準的な記譜に対応しています。なお、<code>P:</code> による演奏順指定や <code>&amp;</code> による声部分割には現在未対応です。</p>
+        <p>合唱音色は General MIDI の「Choir Aahs」による楽器音色であり、歌詞の歌唱合成機能ではありません。</p>
+        <p style="margin-top: 14px;">
+          <a href="support.html#faq">対応範囲とよくある質問を見る →</a>
+        </p>
       </aside>
     </section>
   </main>
 
   <footer>
     <div class="container">
-      <a class="brand" href="index.html" aria-label="ABC Studio — トップへ">ABC Studio</a>
-      <nav aria-label="フッターナビゲーション">
-        <a href="support.html">サポート</a>
-        <a href="privacy.html">プライバシーポリシー</a>
-        <a href="https://github.com/porarrirr/abc-studio">GitHub / MIT License</a>
-        <a href="mailto:musicabc@rarari.org">お問い合わせ</a>
-      </nav>
-      <p>© 2026 porari · iPhone / iPad のための ABC 楽譜アプリ</p>
+      <div class="footer-top">
+        <a class="brand" href="index.html" aria-label="ABC Studio トップへ">
+          <img src="icon.png" width="30" height="30" alt="">
+          <span>ABC Studio</span>
+        </a>
+        <nav aria-label="フッターナビゲーション">
+          <a href="support.html">サポート</a>
+          <a href="privacy.html">プライバシーポリシー</a>
+          <a href="https://github.com/porarrirr/abc-studio">GitHub</a>
+          <a href="mailto:musicabc@rarari.org">お問い合わせ</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 porari · iPhone / iPad のための ABC 楽譜アプリ</p>
+        <p>オープンソース (MIT License) · Bravura Font (OFL 1.1)</p>
+      </div>
     </div>
   </footer>
 </body>
